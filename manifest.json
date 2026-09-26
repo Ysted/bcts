@@ -1,0 +1,16 @@
+{
+  "name": "BCTS — Pencari Bagasi",
+  "short_name": "BCTS",
+  "description": "Pindai tag bagasi, alarm saat nomornya ada di daftar yang dicari.",
+  "lang": "id",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f3f5f7",
+  "theme_color": "#f3f5f7",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

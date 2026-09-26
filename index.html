@@ -4,77 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#f3f5f7">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="BCTS">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>BCTS</title>
-<style>
-  :root {
-    --bg: #f3f5f7;
-    --surface: #ffffff;
-    --text: #111827;
-    --muted: #5b6472;
-    --line: #d9dee5;
-    --found: #15803d;
-    --warn: #b45309;
-    --touch: 56px;
-    font-family: Roboto, "Segoe UI", system-ui, sans-serif;
-    font-size: 18px;
-    color: var(--text);
-    background: var(--bg);
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; padding-bottom: calc(var(--touch) + 24px + env(safe-area-inset-bottom, 0px)); }
-  main { max-width: 640px; margin: 0 auto; padding: 16px; }
-  h1 { font-size: 1.4rem; margin: 8px 0 16px; }
-  .num { font-variant-numeric: tabular-nums lining-nums; letter-spacing: 0.02em; }
-
-  button {
-    min-height: var(--touch);
-    font: inherit;
-    border-radius: 12px;
-    border: 1px solid var(--line);
-    background: var(--surface);
-    color: var(--text);
-    padding: 0 18px;
-    cursor: pointer;
-  }
-  button.primary { background: var(--text); color: #fff; border-color: var(--text); width: 100%; font-weight: 600; }
-
-  textarea {
-    width: 100%;
-    min-height: 120px;
-    font: inherit;
-    padding: 12px;
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    background: var(--surface);
-    resize: vertical;
-  }
-  .add-form { display: grid; gap: 12px; }
-  .feedback { min-height: 1.5em; margin: 12px 0 0; color: var(--muted); }
-  .feedback.has-rejected { color: var(--warn); }
-
-  .watchlist { list-style: none; margin: 24px 0 0; padding: 0; border-top: 1px solid var(--line); }
-  .watchlist li {
-    display: grid; grid-template-columns: 1fr auto; gap: 8px;
-    padding: 12px 0; border-bottom: 1px solid var(--line);
-  }
-  .entry-number { grid-column: 1 / -1; font-size: 1.5rem; font-weight: 600; }
-  .entry-kind { display: block; font-size: 0.85rem; font-weight: 400; color: var(--muted); }
-  .watchlist li.found .entry-digits { color: var(--found); text-decoration: line-through; }
-  .watchlist li.found .entry-kind { color: var(--found); }
-
-  .empty { color: var(--muted); margin-top: 32px; text-align: center; }
-  .list-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; color: var(--muted); }
-  button.confirming { border-color: var(--warn); color: var(--warn); }
-
-  nav {
-    position: fixed; left: 0; right: 0; bottom: 0;
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
-    padding: 8px 16px calc(8px + env(safe-area-inset-bottom, 0px));
-    background: var(--surface); border-top: 1px solid var(--line);
-  }
-  nav button { border: none; background: none; color: var(--muted); }
-  nav button[aria-current="page"] { color: var(--text); font-weight: 700; background: var(--bg); }
-</style>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <main>
@@ -86,7 +24,7 @@
     </form>
     <p class="feedback" id="feedback" role="status" aria-live="polite"></p>
     <p class="empty" id="empty-state">Tempel nomor bagasi yang dicari untuk mulai.</p>
-    <ul class="watchlist" id="watchlist" hidden></ul>
+    <ul class="rows watchlist" id="watchlist" hidden></ul>
     <div class="list-footer" id="list-footer" hidden>
       <span id="list-count"></span>
       <button type="button" id="clear-all">Hapus semua</button>
@@ -95,12 +33,25 @@
 
   <section id="view-scan" data-view="scan" hidden>
     <h1>Scan</h1>
-    <p class="empty">Pemindai kamera belum tersedia di versi ini.</p>
+    <p id="scan-summary"></p>
+    <div class="stack">
+      <button type="button" class="primary" id="start-scan">Mulai scan</button>
+      <button type="button" id="manual-open-idle">Ketik nomor</button>
+    </div>
+    <p class="feedback" id="scan-feedback" role="status" aria-live="polite"></p>
+    <p class="error" id="scan-error" role="alert"></p>
+    <p class="muted small"><span id="app-version"></span> <span id="engine-info"></span></p>
   </section>
 
   <section id="view-log" data-view="log" hidden>
     <h1>Log</h1>
-    <p class="empty">Hasil scan akan muncul di sini.</p>
+    <p class="empty" id="log-empty">Hasil scan akan muncul di sini.</p>
+    <ul class="rows log" id="log-list" hidden></ul>
+    <div class="list-footer" id="log-footer" hidden>
+      <button type="button" id="copy-log">Salin log</button>
+      <button type="button" id="clear-log">Hapus log</button>
+    </div>
+    <p class="feedback" id="log-feedback" role="status" aria-live="polite"></p>
   </section>
 </main>
 
@@ -109,6 +60,47 @@
   <button type="button" data-nav="scan">Scan</button>
   <button type="button" data-nav="log">Log</button>
 </nav>
+
+<div class="scanner" id="scanner" hidden>
+  <video id="video" playsinline muted autoplay></video>
+  <div class="scan-guide"></div>
+  <div class="scan-status" id="scan-status" aria-live="polite">Arahkan kamera ke barcode tag</div>
+  <div class="scan-controls">
+    <button type="button" id="torch" aria-pressed="false" hidden>Senter</button>
+    <button type="button" id="manual-open">Ketik nomor</button>
+    <button type="button" class="wide" id="stop-scan">Berhenti scan</button>
+  </div>
+</div>
+
+<div class="result" id="result" role="alertdialog" aria-modal="true" aria-labelledby="result-title" hidden>
+  <p class="result-title" id="result-title"></p>
+  <div id="result-body"></div>
+  <p class="result-note" id="result-note"></p>
+  <div class="result-actions">
+    <button type="button" class="primary" id="result-found">Tandai sudah ketemu</button>
+    <button type="button" id="result-continue">Lanjut scan</button>
+  </div>
+</div>
+
+<div class="keypad" id="keypad" role="dialog" aria-modal="true" aria-label="Ketik nomor tag" hidden>
+  <p class="keypad-display num" id="keypad-display"></p>
+  <p class="keypad-hint" id="keypad-hint">Ketik 10 digit, atau 6 digit nomor seri</p>
+  <div class="keys" id="keys">
+    <button type="button" data-key="1">1</button>
+    <button type="button" data-key="2">2</button>
+    <button type="button" data-key="3">3</button>
+    <button type="button" data-key="4">4</button>
+    <button type="button" data-key="5">5</button>
+    <button type="button" data-key="6">6</button>
+    <button type="button" data-key="7">7</button>
+    <button type="button" data-key="8">8</button>
+    <button type="button" data-key="9">9</button>
+    <button type="button" data-key="back" aria-label="Hapus satu digit">⌫</button>
+    <button type="button" data-key="0">0</button>
+    <button type="button" class="primary" data-key="check" id="keypad-check" disabled>Cek</button>
+    <button type="button" data-key="close" style="grid-column: 1 / -1">Batal</button>
+  </div>
+</div>
 
 <script type="module" src="app.js"></script>
 </body>
