@@ -12,7 +12,8 @@ const CHROME = "C:/Program Files/Google/Chrome/Application/chrome.exe";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const OUT = fileURLToPath(new URL("output/", import.meta.url));
 const PORT = 8765;
-const URL_BASE = `http://localhost:${PORT}/`;
+// BCTS_URL=https://ysted.github.io/bcts/ node tests/e2e.mjs  → test the live deploy instead
+const URL_BASE = process.env.BCTS_URL || `http://localhost:${PORT}/`;
 mkdirSync(OUT, { recursive: true });
 
 // --- ITF barcode as SVG ---------------------------------------------------------
@@ -62,7 +63,9 @@ async function makeVideo(browser, name, html) {
 }
 
 // --- helpers --------------------------------------------------------------------
-const server = spawn("python", ["-m", "http.server", String(PORT)], { cwd: ROOT, stdio: "ignore" });
+const server = process.env.BCTS_URL
+  ? { kill() {} }
+  : spawn("python", ["-m", "http.server", String(PORT)], { cwd: ROOT, stdio: "ignore" });
 await new Promise((r) => setTimeout(r, 1500));
 
 const launch = (video) => puppeteer.launch({
@@ -150,6 +153,109 @@ try {
   await scanScenario(videos.vertical, WL, "full", "barcode-tegak");
   await scanScenario(videos.tilted, WL, "full", "barcode-miring-buram");
   await scanScenario(videos.small, WL, "full", "barcode-kecil");
+
+  // Android path: a stand-in BarcodeDetector (Windows Chrome has none) that
+  // replays a scripted sequence of raw values, one per frame.
+  async function nativeScenario(sequence, label, check) {
+    const browser = await launch(videos.none);
+    try {
+      const page = await browser.newPage();
+      await page.evaluateOnNewDocument((seq) => {
+        let i = 0;
+        window.BarcodeDetector = class {
+          static async getSupportedFormats() { return ["itf", "code_128", "qr_code", "data_matrix"]; }
+          async detect() {
+            await new Promise((r) => setTimeout(r, 30));
+            const v = i < seq.length ? seq[i++] : null; // then nothing in view
+            return v === null ? [] : [].concat(v).map((rawValue) => ({ rawValue }));
+          }
+        };
+      }, sequence);
+      await page.setViewport({ width: 400, height: 860, isMobile: true, hasTouch: true });
+      await page.goto(URL_BASE, { waitUntil: "networkidle0" });
+      await page.evaluate(() => localStorage.clear());
+      await page.reload({ waitUntil: "networkidle0" });
+      await page.$eval("#bulk-input", (el) => { el.value = "0126123456"; });
+      await page.click("#add-form button[type=submit]");
+      await page.click('nav button[data-nav="scan"]');
+      await page.click("#start-scan");
+      await new Promise((r) => setTimeout(r, 2500));
+      assert.ok((await page.$eval("#engine-info", (e) => e.textContent)).includes("bawaan Chrome"), `${label}: engine`);
+      await check(page);
+      console.log(`✔ ${label}`);
+    } finally {
+      await browser.close();
+    }
+  }
+
+  await nativeScenario(Array(40).fill("0126123456"), "android: tag stabil → cocok", async (page) => {
+    assert.equal(await page.$eval("#result-title", (e) => e.textContent), "Cocok");
+  });
+  // Misread flapping between the true value and a 1-digit error: never two identical
+  // reads in a row, so it must never alarm and never log.
+  await nativeScenario(
+    Array.from({ length: 60 }, (_, i) => (i % 2 ? "0126123456" : "0126123457")),
+    "android: salah baca bergantian → tidak pernah alarm",
+    async (page) => {
+      assert.equal(await isShown(page, "#result"), false);
+      assert.equal(await page.evaluate(() => localStorage.getItem("bcts.log")), null);
+    },
+  );
+  // A misread value seen twice in a row IS accepted as that value — but it only
+  // alarms if that wrong number happens to be on the list. Here it is not.
+  await nativeScenario(
+    ["0126123457", "0126123457", null, null, ...Array(20).fill(null)],
+    "android: salah baca konsisten → tidak dicari, bukan cocok",
+    async (page) => {
+      assert.equal(await isShown(page, "#result"), false);
+      const log = await page.evaluate(() => JSON.parse(localStorage.getItem("bcts.log")));
+      assert.deepEqual(log.map((e) => e.result), ["none"]);
+    },
+  );
+  // Non-tag values (letters, wrong length) are ignored entirely.
+  await nativeScenario(
+    Array.from({ length: 40 }, (_, i) => ["ABC0126123456", "012612345", "01261234567", "https://x"][i % 4]),
+    "android: kode bukan tag diabaikan",
+    async (page) => {
+      assert.equal(await isShown(page, "#result"), false);
+      assert.equal(await page.evaluate(() => localStorage.getItem("bcts.log")), null);
+    },
+  );
+  // Two bags in one frame: both confirmed, the listed one alarms.
+  await nativeScenario(
+    Array(40).fill(["0994777888", "0126123456"]),
+    "android: dua tag dalam satu frame",
+    async (page) => {
+      assert.equal(await page.$eval("#result-title", (e) => e.textContent), "Cocok");
+    },
+  );
+
+  // Officer taps "Berhenti scan" while the camera is still opening: the camera
+  // must not come back on behind the screen.
+  {
+    const browser = await launch(videos.full);
+    try {
+      const page = await browser.newPage();
+      await page.evaluateOnNewDocument(() => {
+        const real = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+        navigator.mediaDevices.getUserMedia = (c) => new Promise((r) => setTimeout(r, 1200)).then(() => real(c));
+      });
+      await page.goto(URL_BASE, { waitUntil: "networkidle0" });
+      await page.click('nav button[data-nav="scan"]');
+      await page.click("#start-scan");
+      await new Promise((r) => setTimeout(r, 200));
+      await page.click("#stop-scan");
+      await new Promise((r) => setTimeout(r, 2500));
+      assert.equal(await isShown(page, "#scanner"), false, "scanner stays closed");
+      assert.equal(await page.$eval("#video", (v) => v.srcObject), null, "camera released");
+      // And a normal start afterwards still works.
+      await page.click("#start-scan");
+      await page.waitForFunction(() => document.getElementById("video").srcObject, { timeout: 10000 });
+      console.log("✔ berhenti saat kamera masih dibuka");
+    } finally {
+      await browser.close();
+    }
+  }
 
   // Manual entry, offline reload, log copy.
   const browser = await launch(videos.none);

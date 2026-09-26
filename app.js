@@ -5,7 +5,7 @@ import {
 import { createDetector, openCamera, startScanLoop, cameraErrorMessage } from "./scanner.js";
 import { unlockAudio, alarmFull, alarmPartial, tick, stopVibration } from "./alarm.js";
 
-const APP_VERSION = "v1"; // keep in step with CACHE in sw.js
+const APP_VERSION = "v2"; // keep in step with CACHE in sw.js
 const WATCHLIST_KEY = "bcts.watchlist";
 const LOG_KEY = "bcts.log";
 const LOG_LIMIT = 500;
@@ -267,7 +267,9 @@ let starting = false;
 
 async function keepScreenOn() {
   try {
-    wakeLock = await navigator.wakeLock?.request("screen");
+    const lock = await navigator.wakeLock?.request("screen");
+    if (camera) wakeLock = lock;
+    else lock?.release().catch(() => {}); // scan already stopped while we waited
   } catch {
     wakeLock = null; // not fatal: the screen may dim, scanning still works
   }
@@ -295,27 +297,39 @@ function setStatus(text, number) {
   scanStatus.append(document.createTextNode(text));
 }
 
+// Bumped by stopScan(); a start that finishes after a stop must not bring the camera back.
+let scanSession = 0;
+
 $("start-scan").addEventListener("click", async () => {
   if (starting || camera) return;
   starting = true;
+  const session = ++scanSession;
   unlockAudio(); // must happen inside this tap or alarms stay silent
   $("scan-error").textContent = "";
+  $("scan-feedback").textContent = "";
   scanner.hidden = false;
   setStatus("Membuka kamera…");
+  let opened;
   try {
     detector ||= await createDetector({ forceZxing });
     $("engine-info").textContent = `· pembaca barcode: ${detector.name}`;
-    camera = await openCamera(video);
-    if (document.hidden) { stopScan(); starting = false; return; } // left the app mid-start
+    opened = await openCamera(video);
   } catch (err) {
+    starting = false;
+    if (session !== scanSession) return;
     scanner.hidden = true;
     $("scan-error").textContent = err?.kind
       ? cameraErrorMessage(err)
       : `Pembaca barcode gagal dimuat (${err?.message || err}). Buka aplikasi sekali saat ada sinyal, lalu coba lagi.`;
-    starting = false;
     return;
   }
   starting = false;
+  if (session !== scanSession || document.hidden) { // stopped or left the app mid-start
+    opened.close();
+    scanner.hidden = true;
+    return;
+  }
+  camera = opened;
   torchButton.hidden = !camera.torchSupported;
   torchButton.setAttribute("aria-pressed", "false");
   setStatus(watchlist.length ? "Arahkan kamera ke barcode tag" : "Daftar kosong: semua tag akan 'tidak dicari'");
@@ -324,6 +338,7 @@ $("start-scan").addEventListener("click", async () => {
 });
 
 function stopScan() {
+  scanSession++;
   pauseLoop();
   camera?.close();
   camera = null;

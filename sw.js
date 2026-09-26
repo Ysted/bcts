@@ -1,6 +1,6 @@
 // Cache-first service worker: after one online visit the app runs fully offline.
 // Bump CACHE on every deploy so phones pick up the new files.
-const CACHE = "bcts-v1";
+const CACHE = "bcts-v2";
 const ASSETS = [
   "./",
   "./index.html",
@@ -17,7 +17,13 @@ const ASSETS = [
 ];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(ASSETS)).then(() => self.skipWaiting()));
+  // cache: "reload" bypasses the HTTP cache (GitHub Pages serves max-age=600),
+  // so a new version never gets stored with stale files from the previous one.
+  event.waitUntil(
+    caches.open(CACHE)
+      .then((cache) => cache.addAll(ASSETS.map((url) => new Request(url, { cache: "reload" }))))
+      .then(() => self.skipWaiting()),
+  );
 });
 
 self.addEventListener("activate", (event) => {
