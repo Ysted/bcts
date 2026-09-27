@@ -5,7 +5,7 @@ import {
 import { createDetector, openCamera, startScanLoop, cameraErrorMessage } from "./scanner.js";
 import { unlockAudio, alarmFull, beep, stopVibration } from "./alarm.js";
 
-const APP_VERSION = "v5"; // keep in step with CACHE in sw.js
+const APP_VERSION = "v6"; // keep in step with CACHE in sw.js
 const WATCHLIST_KEY = "bcts.watchlist";
 const LOG_KEY = "bcts.log";
 const COUNTED_KEY = "bcts.counted"; // unique tags scanned since "Mulai hitungan baru"
@@ -145,8 +145,10 @@ function renderEntry(entry) {
   remove.setAttribute("aria-label", `Hapus ${formatTagNumber(entry.number)}`);
 
   const number = el("div", "entry-number");
-  number.append(el("span", "entry-digits num", formatTagNumber(entry.number)));
-  if (entry.found) number.append(el("span", "entry-kind", "Sudah ketemu"));
+  const text = el("div", "entry-text");
+  text.append(el("span", "entry-digits num", formatTagNumber(entry.number)));
+  if (entry.found) text.append(el("span", "entry-kind", "Sudah ketemu"));
+  number.append(text);
 
   li.append(remove, number);
   return li;
