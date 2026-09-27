@@ -3,9 +3,9 @@ import {
   createReadConfirmer, createCooldown, formatLogText, formatLogTime, RESULT_LABEL,
 } from "./logic.js";
 import { createDetector, openCamera, startScanLoop, cameraErrorMessage } from "./scanner.js";
-import { unlockAudio, alarmFull, beep, stopVibration } from "./alarm.js";
+import { alarmFull, readPulse, stopVibration } from "./alarm.js";
 
-const APP_VERSION = "v8"; // keep in step with CACHE in sw.js
+const APP_VERSION = "v9"; // keep in step with CACHE in sw.js
 const WATCHLIST_KEY = "bcts.watchlist";
 const LOG_KEY = "bcts.log";
 const COUNTED_KEY = "bcts.counted"; // unique tags scanned since "Mulai hitungan baru"
@@ -513,9 +513,6 @@ function endPageDrag(event) {
 document.addEventListener("touchend", endPageDrag, { passive: true });
 document.addEventListener("touchcancel", endPageDrag, { passive: true });
 
-// Any touch on the page keeps audio unlocked (e.g. after returning from background).
-document.addEventListener("pointerdown", unlockAudio, { capture: true, passive: true });
-
 // --- scanning ------------------------------------------------------------------
 
 const video = $("video");
@@ -557,27 +554,48 @@ function pauseLoop() {
   stopLoop = null;
 }
 
-const scanNumber = $("scan-number");
-const scanMs = $("scan-ms");
+const scanHint = $("scan-hint");
+const scanHistory = $("scan-history");
+const HISTORY_SHOWN = 3;
+const calmMotion = matchMedia("(prefers-reduced-motion: reduce)");
 
 function setHint(text) {
-  scanNumber.className = "scan-number num hint";
-  scanNumber.textContent = text;
-  scanMs.textContent = "";
+  scanHint.textContent = text;
 }
 
-// Last read under the guide box. A near miss colours each digit: green where it
-// equals the listed number, red where it differs.
+// Reads stack under the guide box: the new one pops in on top, older ones slide
+// down, shrink and fade, so each successful read is obvious without any sound.
+// A near miss colours each digit: green where it equals the listed number, red where it differs.
 function showRead(number, ms, near) {
-  scanNumber.className = "scan-number num";
-  scanNumber.replaceChildren();
+  setHint("");
+  const digits = el("p", "scan-number num");
   let index = 0;
   for (const ch of formatTagNumber(number)) {
-    if (ch === " ") { scanNumber.append(ch); continue; }
-    scanNumber.append(near ? el("span", near.flags[index] ? "diff" : "same", ch) : ch);
+    if (ch === " ") { digits.append(ch); continue; }
+    digits.append(near ? el("span", near.flags[index] ? "diff" : "same", ch) : ch);
     index++;
   }
-  scanMs.textContent = `terbaca ${ms} ms`;
+  const item = el("li");
+  item.append(digits, el("p", "scan-ms num", `terbaca ${ms} ms`));
+
+  const before = new Map([...scanHistory.children].map((li) => [li, li.getBoundingClientRect().top]));
+  scanHistory.prepend(item);
+  [...scanHistory.children].forEach((li, i) => {
+    li.classList.toggle("old", i > 0);
+    if (i >= HISTORY_SHOWN) li.remove();
+  });
+  if (!calmMotion.matches) {
+    item.animate([
+      { transform: "scale(0.6)", opacity: 0 },
+      { transform: "scale(1.08)", opacity: 1, offset: 0.6 },
+      { transform: "scale(1)", opacity: 1 },
+    ], { duration: 280, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" });
+    for (const [li, top] of before) { // slide the older reads from where they were
+      if (!li.isConnected) continue;
+      const dy = top - li.getBoundingClientRect().top;
+      li.animate([{ transform: `translateY(${dy}px)` }, { transform: "none" }], { duration: 240, easing: "ease-out" });
+    }
+  }
   const flash = $("scan-flash");
   flash.classList.remove("on");
   void flash.offsetWidth; // restart the animation on back-to-back reads
@@ -591,7 +609,6 @@ async function startScan() {
   if (starting || camera) return;
   starting = true;
   const session = ++scanSession;
-  unlockAudio(); // must happen inside this tap or alarms stay silent
   $("scan-retry").hidden = true;
   setHint("Membuka kamera…");
   let opened;
@@ -617,7 +634,7 @@ async function startScan() {
   torchButton.hidden = !camera.torchSupported;
   torchButton.setAttribute("aria-pressed", "false");
   lastReported = null;
-  setHint(watchlist.length ? "Arahkan kamera ke barcode tag" : "Daftar kosong: tidak ada yang dicari");
+  setHint(scanHistory.children.length ? "" : watchlist.length ? "Arahkan kamera ke barcode tag" : "Daftar kosong: tidak ada yang dicari");
   keepScreenOn();
   resumeLoop();
 }
@@ -660,7 +677,7 @@ function handleNumber(number, ms) {
   const match = matchTag(number, watchlist);
   addLog(number, match);
   countTag(number);
-  beep();
+  readPulse();
   showRead(number, ms, match.near);
   if (match.result === "full") openResult(number, match);
 }

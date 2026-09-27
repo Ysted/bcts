@@ -104,16 +104,16 @@ async function scanScenario(videoFile, watchlistText, expect, label) {
   try {
     const t0 = Date.now();
     const { page, errors } = await openApp(browser, watchlistText);
-    await page.waitForFunction(() => document.getElementById("scan-ms").textContent.startsWith("terbaca"), { timeout: 15000 });
+    await page.waitForFunction(() => document.querySelector("#scan-history .scan-ms")?.textContent.startsWith("terbaca"), { timeout: 15000 });
     const ms = Date.now() - t0;
-    const readMs = await page.$eval("#scan-ms", (e) => e.textContent);
+    const readMs = await page.$eval("#scan-history li:first-child .scan-ms", (e) => e.textContent);
     if (expect === "full") {
       await page.waitForSelector("#result:not([hidden])", { timeout: 2000 });
       assert.equal(await page.$eval("#result-title", (e) => e.textContent), "Ketemu!", `${label}: title`);
     } else {
       await new Promise((r) => setTimeout(r, 500));
       assert.equal(await isShown(page, "#result"), false, `${label}: no overlay`);
-      const colours = await page.$$eval("#scan-number span", (s) => s.map((x) => x.className).join(","));
+      const colours = await page.$$eval("#scan-history li:first-child .scan-number span", (s) => s.map((x) => x.className).join(","));
       if (expect === "near") assert.ok(colours.includes("diff") && colours.includes("same"), `${label}: coloured digits`);
       else assert.equal(colours, "", `${label}: no colours`);
     }
@@ -171,6 +171,10 @@ try {
       const page = await browser.newPage();
       await page.evaluateOnNewDocument((seq) => {
         let i = 0;
+        window.__audioUsed = false; // the app must stay silent (iPhone shows a music player otherwise)
+        for (const name of ["AudioContext", "webkitAudioContext"]) {
+          window[name] = class { constructor() { window.__audioUsed = true; } };
+        }
         window.BarcodeDetector = class {
           static async getSupportedFormats() { return ["itf", "code_128", "qr_code", "data_matrix"]; }
           async detect() {
@@ -241,6 +245,9 @@ try {
       await new Promise((r) => setTimeout(r, 6000));
       const log = await page.evaluate(() => JSON.parse(localStorage.getItem("bcts.log")));
       assert.deepEqual(log.map((e) => e.number), ["0994777888", "0990111222", "0994777888"]);
+      const stack = await page.$$eval("#scan-history li", (li) => li.map((x) => `${x.className}|${x.querySelector(".scan-number").textContent}`));
+      assert.deepEqual(stack, ["|0 994 777888", "old|0 990 111222", "old|0 994 777888"], "newest on top, older shrink below");
+      assert.equal(await page.evaluate(() => window.__audioUsed), false, "no audio at all");
       assert.equal(await page.$eval("#scan-count strong", (e) => e.textContent), "2", "unique count");
     },
   );
@@ -300,7 +307,7 @@ try {
     const zxingOffline = await page.evaluate(async () => (await fetch("vendor/zxing-0.23.0.min.js")).ok);
     assert.ok(zxingOffline, "ZXing cached for offline");
     await page.click('nav button[data-nav="scan"]');
-    await page.waitForFunction(() => document.getElementById("scan-ms").textContent.startsWith("terbaca"), { timeout: 15000 });
+    await page.waitForFunction(() => document.querySelector("#scan-history .scan-ms")?.textContent.startsWith("terbaca"), { timeout: 15000 });
     await page.setOfflineMode(false);
 
     await page.waitForSelector("#result:not([hidden])"); // same tag, already found: still alarms
