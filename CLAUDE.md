@@ -20,6 +20,17 @@ Bangun mengikuti tahapan di `plan.md` secara berurutan. Setiap tahap harus bisa 
 
 **Bahasa antarmuka: Indonesia.** Komentar kode boleh Inggris.
 
+## Keputusan setelah uji lapangan (v3, 2026-09-27)
+
+Menggantikan bagian PRD yang bertentangan:
+
+- Daftar hanya menerima nomor 10 angka. Nomor seri 6 angka dan status "cocok sebagian" dihapus.
+- Hanya cocok penuh yang memberi alarm, dengan judul "Ketemu!"; di log berlabel "Match". Tag lain di log tanpa label, hanya nomor dan jam.
+- Nomor yang mirip (≥8 dari 10 angka sama di posisi yang sama) tidak memberi alarm; angkanya diwarnai hijau (sama) dan merah (beda) di bawah kotak scan.
+- Tidak ada input manual / tombol Ketik nomor. Atensi hanya diisi di halaman Daftar.
+- Membuka tab Scan langsung menyalakan kamera. Setiap baca berbunyi beep, layar berkedip, dan waktu baca ("terbaca N ms") ditampilkan.
+- Tag yang sama tidak dicatat ulang sampai ada tag lain yang terbaca.
+
 ## Jebakan teknis yang sudah diketahui
 
 Ini hal-hal yang akan memakan waktu kalau ditemukan sendiri saat debugging:

@@ -6,62 +6,47 @@ import {
   createReadConfirmer, createCooldown, diffDigits, formatLogText,
 } from "./logic.js";
 
-const list = (...numbers) => numbers.map((number) => ({ number, kind: number.length === 10 ? "full" : "serial", found: false }));
+const list = (...numbers) => numbers.map((number) => ({ number, found: false }));
 
-test("match: cocok penuh 10 digit identik", () => {
-  const wl = list("0126123456", "0990000001");
-  const r = matchTag("0126123456", wl);
+test("match: penuh 10 digit identik", () => {
+  const r = matchTag("0126123456", list("0126123456", "0990000001"));
   assert.equal(r.result, "full");
   assert.equal(r.full.number, "0126123456");
-  assert.equal(r.partials.length, 0);
-});
-
-test("match: seri sama, maskapai beda → sebagian", () => {
-  const r = matchTag("0657123456", list("0126123456"));
-  assert.equal(r.result, "partial");
-  assert.equal(r.full, null);
-  assert.deepEqual(r.partials.map((e) => e.number), ["0126123456"]);
-});
-
-test("match: digit leading beda → sebagian, bukan penuh", () => {
-  assert.equal(matchTag("1126123456", list("0126123456")).result, "partial");
-});
-
-test("match: entri 6 digit selalu sebagian", () => {
-  const r = matchTag("0126123456", list("123456"));
-  assert.equal(r.result, "partial");
-});
-
-test("match: penuh menang, sebagian lain tetap dilaporkan", () => {
-  const r = matchTag("0126123456", list("0657123456", "0126123456", "123456"));
-  assert.equal(r.result, "full");
-  assert.equal(r.full.number, "0126123456");
-  assert.deepEqual(r.partials.map((e) => e.number), ["0657123456", "123456"]);
-});
-
-test("match: dua entri sebagian untuk satu scan", () => {
-  const r = matchTag("0994123456", list("0657123456", "0126123456"));
-  assert.equal(r.result, "partial");
-  assert.equal(r.partials.length, 2);
+  assert.equal(r.near, null);
 });
 
 test("match: leading zero tidak hilang", () => {
   assert.equal(matchTag("0000000001", list("0000000001")).result, "full");
-  assert.equal(matchTag("0000000001", list("0000000002")).result, "none");
 });
 
-test("match: satu digit beda di seri → tidak cocok", () => {
-  assert.equal(matchTag("0126123457", list("0126123456")).result, "none");
+test("match: satu digit beda → bukan penuh, tapi mirip", () => {
+  const r = matchTag("0126123457", list("0126123456"));
+  assert.equal(r.result, "none");
+  assert.equal(r.near.entry.number, "0126123456");
+  assert.deepEqual(r.near.flags, [false, false, false, false, false, false, false, false, false, true]);
 });
 
-test("match: input manual 6 digit tidak pernah jadi penuh", () => {
-  const r = matchTag("123456", list("0126123456", "123456"));
-  assert.equal(r.result, "partial");
-  assert.equal(r.partials.length, 2);
+test("mirip: 8 dari 10 sama → diwarnai, 7 dari 10 → tidak", () => {
+  assert.ok(matchTag("1234567809", list("1234567890")).near); // 8 sama, "09" beda
+  assert.ok(matchTag("1234567801", list("1234567890")).near); // 8 sama
+  assert.equal(matchTag("1234567011", list("1234567890")).near, null); // 7 sama
+});
+
+test("mirip: pilih entri paling dekat", () => {
+  const r = matchTag("1234567899", list("1234567800", "1234567890"));
+  assert.equal(r.near.entry.number, "1234567890");
+});
+
+test("match: entri lama 6 digit tidak pernah cocok", () => {
+  const r = matchTag("0126123456", list("123456"));
+  assert.equal(r.result, "none");
+  assert.equal(r.near, null);
 });
 
 test("match: daftar kosong", () => {
-  assert.equal(matchTag("0126123456", []).result, "none");
+  const r = matchTag("0126123456", []);
+  assert.equal(r.result, "none");
+  assert.equal(r.near, null);
 });
 
 test("scan valid hanya tepat 10 digit", () => {
@@ -79,7 +64,7 @@ test("konfirmasi: satu kali baca tidak cukup", () => {
 test("konfirmasi: dua frame berturut identik → diterima sekali", () => {
   const confirm = createReadConfirmer();
   confirm(["0126123456"], 0);
-  assert.deepEqual(confirm(["0126123456"], 50), ["0126123456"]);
+  assert.deepEqual(confirm(["0126123456"], 50), [{ value: "0126123456", ms: 50 }]);
   assert.deepEqual(confirm(["0126123456"], 100), []); // tidak diulang selama streak
 });
 
@@ -88,14 +73,14 @@ test("konfirmasi: salah baca di tengah memutus streak", () => {
   confirm(["0126123456"], 0);
   confirm(["0126123457"], 50);
   assert.deepEqual(confirm(["0126123456"], 100), []);
-  assert.deepEqual(confirm(["0126123456"], 150), ["0126123456"]);
+  assert.deepEqual(confirm(["0126123456"], 150), [{ value: "0126123456", ms: 50 }]);
 });
 
 test("konfirmasi: frame kosong dilewati, jeda panjang me-reset", () => {
   const confirm = createReadConfirmer({ maxGapMs: 1000 });
   confirm(["0126123456"], 0);
   assert.deepEqual(confirm([], 30), []);
-  assert.deepEqual(confirm(["0126123456"], 60), ["0126123456"]);
+  assert.deepEqual(confirm(["0126123456"], 60), [{ value: "0126123456", ms: 60 }]);
   const c2 = createReadConfirmer({ maxGapMs: 1000 });
   c2(["0126123456"], 0);
   assert.deepEqual(c2(["0126123456"], 2000), []);
@@ -104,7 +89,7 @@ test("konfirmasi: frame kosong dilewati, jeda panjang me-reset", () => {
 test("konfirmasi: dua barcode berbeda dalam satu frame tidak saling merusak", () => {
   const confirm = createReadConfirmer();
   confirm(["0126123456", "0657000001"], 0);
-  assert.deepEqual(confirm(["0126123456", "0657000001"], 50).sort(), ["0126123456", "0657000001"]);
+  assert.deepEqual(confirm(["0126123456", "0657000001"], 50).map((c) => c.value).sort(), ["0126123456", "0657000001"]);
 });
 
 test("cooldown 3 detik dan suppress", () => {
@@ -118,29 +103,26 @@ test("cooldown 3 detik dan suppress", () => {
   assert.ok(cd.shouldReport("B", 13000));
 });
 
-test("teks log siap kirim", () => {
+test("teks log siap kirim: hanya Match yang berlabel", () => {
   const t = new Date(2026, 8, 27, 7, 5, 9).getTime();
   const text = formatLogText([
-    { number: "0126123456", time: t, result: "full", source: "kamera" },
-    { number: "0657123456", time: t, result: "partial", source: "kamera", partialNumbers: ["0126123456"] },
-    { number: "123456", time: t, result: "partial", source: "manual", partialNumbers: ["0126123456", "123456"] },
-    { number: "0994000001", time: t, result: "none", source: "kamera" },
+    { number: "0126123456", time: t, result: "full" },
+    { number: "0994000001", time: t, result: "none" },
+    { number: "0657123456", time: t, result: "partial", source: "manual" }, // entri lama v2
   ]);
   assert.equal(text, [
     "Log scan bagasi",
-    "27/09 07:05:09  0 126 123456  COCOK",
-    "27/09 07:05:09  0 657 123456  cocok sebagian (dicari: 0 126 123456)",
-    "27/09 07:05:09  123456  cocok sebagian (dicari: 0 126 123456, 123456) [ketik]",
-    "27/09 07:05:09  0 994 000001  tidak dicari",
+    "27/09 07:05:09  0 126 123456  Match",
+    "27/09 07:05:09  0 994 000001",
+    "27/09 07:05:09  0 657 123456",
   ].join("\n"));
 });
 
 test("diffDigits rata kanan", () => {
   assert.deepEqual(diffDigits("0657123456", "0126123456"), [false, true, true, true, false, false, false, false, false, false]);
-  assert.deepEqual(diffDigits("0126123456", "123456"), [true, true, true, true, false, false, false, false, false, false]);
 });
 
-test("tahap 1: tempel 20 nomor campuran", () => {
+test("tempel 20 nomor campuran: hanya 10 angka diterima", () => {
   const pasted = [
     "Mohon dicari bagasi berikut:",
     "0126123456",          // full
@@ -149,8 +131,8 @@ test("tahap 1: tempel 20 nomor campuran", () => {
     "0141000001, 0994000002; 0126000003", // 3 full, pemisah campuran
     "",                    // baris kosong
     "   ",
-    "123456",              // serial (duplikat seri dari entri pertama, tapi beda nomor → sah)
-    "654999",              // serial
+    "123456",              // ditolak: 6 digit
+    "GA 654999",           // ditolak: huruf dibuang, sisa 6 digit
     "0126123456",          // duplikat
     "0-990-654321",        // duplikat (setelah normalisasi)
     "12345",               // ditolak: 5 digit
@@ -163,11 +145,9 @@ test("tahap 1: tempel 20 nomor campuran", () => {
   ].join("\n");
 
   const r = parseBulkInput(pasted);
-  assert.equal(r.added.length, 14);
-  assert.equal(r.added.filter((e) => e.kind === "full").length, 12);
-  assert.equal(r.added.filter((e) => e.kind === "serial").length, 2);
+  assert.equal(r.added.length, 12);
   assert.equal(r.duplicates, 3);
-  assert.deepEqual(r.rejected, ["12345", "01261234567"]);
+  assert.deepEqual(r.rejected, ["123456", "654999", "12345", "01261234567"]);
   assert.ok(r.added.some((e) => e.number === "0990654321"));
   assert.ok(r.added.some((e) => e.number === "0657111222"));
 });
@@ -184,10 +164,9 @@ test("leading zero tetap utuh", () => {
 
 test("format dan ringkasan", () => {
   assert.equal(formatTagNumber("0657123456"), "0 657 123456");
-  assert.equal(formatTagNumber("123456"), "123456");
   assert.equal(
     summarizeAddResult({ added: [{}, {}], duplicates: 1, rejected: ["12345"] }),
-    "2 ditambahkan · 1 duplikat dibuang · 1 ditolak (bukan 6 atau 10 digit): 12345",
+    "2 ditambahkan · 1 duplikat dibuang · 1 ditolak (bukan 10 angka): 12345",
   );
   assert.equal(summarizeAddResult({ added: [], duplicates: 0, rejected: [] }), "Tidak ada nomor di teks itu.");
 });

@@ -1,17 +1,10 @@
 // Pure logic: no DOM, no storage, no camera. Tested by logic.test.mjs.
 
 export const FULL_LENGTH = 10;
-export const SERIAL_LENGTH = 6;
+export const NEAR_MIN_SAME = 8; // digits in the same position for a "near" hint
 
 export function normalizeTagNumber(raw) {
   return String(raw).replace(/\D/g, "");
-}
-
-// 'full' (10 digits), 'serial' (6 digits), or null when the length is invalid.
-export function tagKind(digits) {
-  if (digits.length === FULL_LENGTH) return "full";
-  if (digits.length === SERIAL_LENGTH) return "serial";
-  return null;
 }
 
 // Split pasted text into candidate tokens. Lines, commas and semicolons always
@@ -22,13 +15,13 @@ export function tokenizeBulkInput(text) {
   for (const chunk of String(text).split(/[\r\n,;]+/)) {
     const trimmed = chunk.trim();
     if (!trimmed) continue;
-    if (tagKind(normalizeTagNumber(trimmed))) tokens.push(trimmed);
+    if (normalizeTagNumber(trimmed).length === FULL_LENGTH) tokens.push(trimmed);
     else tokens.push(...trimmed.split(/\s+/));
   }
   return tokens;
 }
 
-// Returns { added: [{number, kind}], duplicates, rejected: [raw token] }.
+// Returns { added: [{number}], duplicates, rejected: [raw token] }.
 // Tokens without any digit (words like "Tag:") are ignored, not rejected.
 export function parseBulkInput(text, existingNumbers = []) {
   const seen = new Set(existingNumbers);
@@ -36,14 +29,13 @@ export function parseBulkInput(text, existingNumbers = []) {
   for (const token of tokenizeBulkInput(text)) {
     const digits = normalizeTagNumber(token);
     if (!digits) continue;
-    const kind = tagKind(digits);
-    if (!kind) {
+    if (digits.length !== FULL_LENGTH) {
       result.rejected.push(token);
     } else if (seen.has(digits)) {
       result.duplicates++;
     } else {
       seen.add(digits);
-      result.added.push({ number: digits, kind });
+      result.added.push({ number: digits });
     }
   }
   return result;
@@ -54,7 +46,7 @@ export function summarizeAddResult({ added, duplicates, rejected }) {
   if (added.length) parts.push(`${added.length} ditambahkan`);
   if (duplicates) parts.push(`${duplicates} duplikat dibuang`);
   if (rejected.length) {
-    parts.push(`${rejected.length} ditolak (bukan 6 atau 10 digit): ${rejected.join(", ")}`);
+    parts.push(`${rejected.length} ditolak (bukan 10 angka): ${rejected.join(", ")}`);
   }
   return parts.length ? parts.join(" · ") : "Tidak ada nomor di teks itu.";
 }
@@ -63,22 +55,26 @@ export function summarizeAddResult({ added, duplicates, rejected }) {
 // The most critical code in the app: a wrong 'full' sends an officer to the
 // wrong bag. Keep it pure and boring.
 
-const serialOf = (digits) => digits.slice(-SERIAL_LENGTH);
-
-// scanned: 10 digits (camera) or 6/10 digits (manual entry).
-// watchlist: [{ number, kind, found }].
-// Returns { result: 'full'|'partial'|'none', full: entry|null, partials: [entry] }.
-// 'full' only when both sides are 10 digits and identical; it always wins.
-// 'partial' when the last 6 digits agree but the full number is not proven identical.
+// scanned: 10 digits. watchlist: [{ number, found }].
+// Returns { result: 'full'|'none', full: entry|null, near: { entry, flags }|null }.
+// 'full' only when identical. 'near' is display-only (no alarm): the closest
+// entry with at least NEAR_MIN_SAME digits equal in the same position; flags
+// mark the positions that differ.
 export function matchTag(scanned, watchlist) {
-  const full = scanned.length === FULL_LENGTH
-    ? watchlist.find((e) => e.number.length === FULL_LENGTH && e.number === scanned) || null
-    : null;
-  const partials = watchlist.filter(
-    (e) => e !== full && serialOf(e.number) === serialOf(scanned),
-  );
-  const result = full ? "full" : partials.length ? "partial" : "none";
-  return { result, full, partials };
+  const full = watchlist.find((e) => e.number === scanned) || null;
+  if (full) return { result: "full", full, near: null };
+  let near = null;
+  let bestSame = NEAR_MIN_SAME - 1;
+  for (const entry of watchlist) {
+    if (entry.number.length !== scanned.length) continue;
+    const flags = diffDigits(scanned, entry.number);
+    const same = flags.filter((differs) => !differs).length;
+    if (same > bestSame) {
+      bestSame = same;
+      near = { entry, flags };
+    }
+  }
+  return { result: "none", full: null, near };
 }
 
 // Accept only what a baggage tag can carry: exactly 10 digits, nothing else.
@@ -91,8 +87,9 @@ export function isValidScan(raw) {
 // decoded in two consecutive frames that produced any decode at all. A frame
 // with a different value (or none of this value) resets its streak.
 // Frames where nothing decoded are skipped, but a gap longer than maxGapMs resets.
+// Returns [{ value, ms }], ms = time from the first read of the streak to confirmation.
 export function createReadConfirmer({ required = 2, maxGapMs = 1000 } = {}) {
-  let streaks = new Map();
+  let streaks = new Map(); // value -> { count, since }
   let lastFrameAt = -Infinity;
   return function onFrame(values, now) {
     if (!values.length) return [];
@@ -101,9 +98,10 @@ export function createReadConfirmer({ required = 2, maxGapMs = 1000 } = {}) {
     const next = new Map();
     const confirmed = [];
     for (const value of new Set(values)) {
-      const count = (streaks.get(value) || 0) + 1;
-      next.set(value, count);
-      if (count === required) confirmed.push(value);
+      const prev = streaks.get(value);
+      const streak = { count: (prev?.count || 0) + 1, since: prev?.since ?? now };
+      next.set(value, streak);
+      if (streak.count === required) confirmed.push({ value, ms: Math.round(now - streak.since) });
     }
     streaks = next;
     return confirmed;
@@ -128,7 +126,7 @@ export function createCooldown(cooldownMs = 3000) {
 }
 
 // Per-character flags for display: true where `digits` differs from `reference`,
-// comparing right-aligned (so a 6-digit serial lines up with the last 6 of a tag).
+// comparing right-aligned.
 // Positions with no counterpart are flagged too.
 export function diffDigits(digits, reference) {
   const offset = reference.length - digits.length;
@@ -137,7 +135,7 @@ export function diffDigits(digits, reference) {
 
 // --- log ---------------------------------------------------------------------
 
-export const RESULT_LABEL = { full: "COCOK", partial: "cocok sebagian", none: "tidak dicari" };
+export const RESULT_LABEL = { full: "Match" }; // anything else is shown without a label
 
 const pad2 = (n) => String(n).padStart(2, "0");
 
@@ -146,14 +144,10 @@ export function formatLogTime(time) {
   return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
 }
 
-// entry: { number, time, result, source: 'kamera'|'manual', partialNumbers?: [] }
+// entry: { number, time, result }
 export function formatLogLine(entry) {
-  let line = `${formatLogTime(entry.time)}  ${formatTagNumber(entry.number)}  ${RESULT_LABEL[entry.result]}`;
-  if (entry.result === "partial" && entry.partialNumbers?.length) {
-    line += ` (dicari: ${entry.partialNumbers.map(formatTagNumber).join(", ")})`;
-  }
-  if (entry.source === "manual") line += " [ketik]";
-  return line;
+  const label = RESULT_LABEL[entry.result];
+  return `${formatLogTime(entry.time)}  ${formatTagNumber(entry.number)}${label ? `  ${label}` : ""}`;
 }
 
 // Oldest first, ready to paste into WhatsApp.
@@ -161,7 +155,7 @@ export function formatLogText(entries) {
   return ["Log scan bagasi", ...entries.map(formatLogLine)].join("\n");
 }
 
-// "0657123456" -> "0 657 123456"; 6-digit serials stay as-is.
+// "0657123456" -> "0 657 123456"; other lengths stay as-is.
 export function formatTagNumber(digits) {
   if (digits.length !== FULL_LENGTH) return digits;
   return `${digits.slice(0, 1)} ${digits.slice(1, 4)} ${digits.slice(4)}`;

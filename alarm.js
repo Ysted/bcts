@@ -56,17 +56,10 @@ export function alarmFull() {
   vibrate([800, 150, 800]);
 }
 
-// Partial match: two lower beeps + two short vibrations. Different on purpose.
-export function alarmPartial() {
-  tone(440, 0, 0.22, 0.8, "sawtooth");
-  tone(440, 0.32, 0.22, 0.8, "sawtooth");
-  vibrate([150, 120, 150]);
-}
-
-// Not on the list: a short quiet tick, confirms the read happened.
-export function tick() {
-  tone(2000, 0, 0.03, 0.15, "sine");
-  vibrate(20);
+// Every accepted read: one crisp beep like a handheld scanner gun.
+export function beep() {
+  tone(2700, 0, 0.1, 0.5, "square");
+  vibrate(40);
 }
 
 export function stopVibration() {

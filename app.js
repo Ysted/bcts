@@ -1,11 +1,11 @@
 import {
   parseBulkInput, summarizeAddResult, formatTagNumber, matchTag, isValidScan,
-  createReadConfirmer, createCooldown, diffDigits, formatLogText, formatLogTime, RESULT_LABEL,
+  createReadConfirmer, createCooldown, formatLogText, formatLogTime, RESULT_LABEL,
 } from "./logic.js";
 import { createDetector, openCamera, startScanLoop, cameraErrorMessage } from "./scanner.js";
-import { unlockAudio, alarmFull, alarmPartial, tick, stopVibration } from "./alarm.js";
+import { unlockAudio, alarmFull, beep, stopVibration } from "./alarm.js";
 
-const APP_VERSION = "v2"; // keep in step with CACHE in sw.js
+const APP_VERSION = "v3"; // keep in step with CACHE in sw.js
 const WATCHLIST_KEY = "bcts.watchlist";
 const LOG_KEY = "bcts.log";
 const LOG_LIMIT = 500;
@@ -38,8 +38,9 @@ function saveList(key, value) {
 }
 const STORAGE_WARNING = "Perhatian: data tidak bisa disimpan di HP ini dan akan hilang saat aplikasi ditutup. Jangan pakai mode penyamaran/pribadi.";
 
-let watchlist = loadList(WATCHLIST_KEY).filter((e) => e && typeof e.number === "string"); // [{ number, kind, found }]
-let scanLog = loadList(LOG_KEY); // [{ number, time, result, source, partialNumbers }]
+// v2 also accepted 6-digit serials; those can never match now, so they are dropped.
+let watchlist = loadList(WATCHLIST_KEY).filter((e) => e && isValidScan(e.number)); // [{ number, found }]
+let scanLog = loadList(LOG_KEY); // [{ number, time, result }]
 
 function saveWatchlist() { saveList(WATCHLIST_KEY, watchlist); }
 function saveLog() { saveList(LOG_KEY, scanLog); }
@@ -103,6 +104,9 @@ function renderWatchlist() {
   $("scan-summary").textContent = hasEntries
     ? `${watchlist.length - foundCount} nomor masih dicari, ${foundCount} sudah ketemu.`
     : "Daftar masih kosong. Isi dulu nomor yang dicari di tab Daftar.";
+  $("scan-count").textContent = hasEntries
+    ? `${watchlist.length - foundCount} dicari · ${foundCount} ketemu`
+    : "Daftar kosong";
 }
 
 function renderEntry(entry) {
@@ -111,9 +115,7 @@ function renderEntry(entry) {
 
   const number = el("div", "entry-number");
   number.append(el("span", "entry-digits num", formatTagNumber(entry.number)));
-  const kindText = [entry.kind === "serial" ? "Nomor seri saja" : "", entry.found ? "Sudah ketemu" : ""]
-    .filter(Boolean).join(" · ");
-  number.append(el("span", "entry-kind", kindText));
+  number.append(el("span", "entry-kind", entry.found ? "Sudah ketemu" : ""));
 
   const toggle = el("button", "", entry.found ? "Batal ketemu" : "Tandai sudah ketemu");
   toggle.type = "button";
@@ -129,6 +131,12 @@ function renderEntry(entry) {
   li.append(number, toggle, remove);
   return li;
 }
+
+// Digits only; spaces, newlines, commas, semicolons and dashes still separate/group numbers.
+$("bulk-input").addEventListener("input", (event) => {
+  const clean = event.target.value.replace(/[^\d\s,;-]/g, "");
+  if (clean !== event.target.value) event.target.value = clean;
+});
 
 $("add-form").addEventListener("submit", (event) => {
   event.preventDefault();
@@ -174,10 +182,9 @@ function renderLog() {
     const li = el("li", entry.result);
     li.append(el("div", "log-number num", formatTagNumber(entry.number)));
     const meta = el("div", "log-meta");
-    meta.append(el("span", "log-result", RESULT_LABEL[entry.result]));
-    let extra = ` · ${formatLogTime(entry.time)}`;
-    if (entry.source === "manual") extra += " · diketik";
-    meta.append(document.createTextNode(extra));
+    const label = RESULT_LABEL[entry.result];
+    if (label) meta.append(el("span", "log-result", label), document.createTextNode(" · "));
+    meta.append(document.createTextNode(formatLogTime(entry.time)));
     li.append(meta);
     return li;
   });
@@ -188,14 +195,8 @@ function renderLog() {
   $("log-empty").hidden = hasRows;
 }
 
-function addLog(number, match, source) {
-  scanLog.push({
-    number,
-    time: Date.now(),
-    result: match.result,
-    source,
-    partialNumbers: match.partials.map((e) => e.number),
-  });
+function addLog(number, match) {
+  scanLog.push({ number, time: Date.now(), result: match.result });
   if (scanLog.length > LOG_LIMIT) scanLog = scanLog.slice(-LOG_LIMIT);
   saveLog();
   renderLog();
@@ -240,6 +241,8 @@ twoTapButton($("clear-log"), "Tekan lagi untuk hapus log", () => {
 const navButtons = document.querySelectorAll("nav button[data-nav]");
 
 function showView(name) {
+  if (name === "scan") startScan(); // the tap on the tab also unlocks audio
+  else stopScan();
   document.querySelectorAll("section[data-view]").forEach((v) => { v.hidden = v.dataset.view !== name; });
   navButtons.forEach((b) => {
     if (b.dataset.nav === name) b.setAttribute("aria-current", "page");
@@ -253,7 +256,6 @@ navButtons.forEach((b) => b.addEventListener("click", () => showView(b.dataset.n
 
 const video = $("video");
 const scanner = $("scanner");
-const scanStatus = $("scan-status");
 const torchButton = $("torch");
 const forceZxing = new URLSearchParams(location.search).get("engine") === "zxing";
 
@@ -262,6 +264,7 @@ let camera = null;
 let stopLoop = null;
 let confirmReads = createReadConfirmer();
 const cooldown = createCooldown(3000);
+let lastReported = null; // same tag stays quiet until a different one is read
 let wakeLock = null;
 let starting = false;
 
@@ -291,16 +294,37 @@ function pauseLoop() {
   stopLoop = null;
 }
 
-function setStatus(text, number) {
-  scanStatus.replaceChildren();
-  if (number) scanStatus.append(el("span", "num", formatTagNumber(number)), document.createTextNode(" · "));
-  scanStatus.append(document.createTextNode(text));
+const scanNumber = $("scan-number");
+const scanMs = $("scan-ms");
+
+function setHint(text) {
+  scanNumber.className = "scan-number num hint";
+  scanNumber.textContent = text;
+  scanMs.textContent = "";
+}
+
+// Last read under the guide box. A near miss colours each digit: green where it
+// equals the listed number, red where it differs.
+function showRead(number, ms, near) {
+  scanNumber.className = "scan-number num";
+  scanNumber.replaceChildren();
+  let index = 0;
+  for (const ch of formatTagNumber(number)) {
+    if (ch === " ") { scanNumber.append(ch); continue; }
+    scanNumber.append(near ? el("span", near.flags[index] ? "diff" : "same", ch) : ch);
+    index++;
+  }
+  scanMs.textContent = `terbaca ${ms} ms`;
+  const flash = $("scan-flash");
+  flash.classList.remove("on");
+  void flash.offsetWidth; // restart the animation on back-to-back reads
+  flash.classList.add("on");
 }
 
 // Bumped by stopScan(); a start that finishes after a stop must not bring the camera back.
 let scanSession = 0;
 
-$("start-scan").addEventListener("click", async () => {
+async function startScan() {
   if (starting || camera) return;
   starting = true;
   const session = ++scanSession;
@@ -308,7 +332,7 @@ $("start-scan").addEventListener("click", async () => {
   $("scan-error").textContent = "";
   $("scan-feedback").textContent = "";
   scanner.hidden = false;
-  setStatus("Membuka kamera…");
+  setHint("Membuka kamera…");
   let opened;
   try {
     detector ||= await createDetector({ forceZxing });
@@ -332,10 +356,13 @@ $("start-scan").addEventListener("click", async () => {
   camera = opened;
   torchButton.hidden = !camera.torchSupported;
   torchButton.setAttribute("aria-pressed", "false");
-  setStatus(watchlist.length ? "Arahkan kamera ke barcode tag" : "Daftar kosong: semua tag akan 'tidak dicari'");
+  lastReported = null;
+  setHint(watchlist.length ? "Arahkan kamera ke barcode tag" : "Daftar kosong: tidak ada yang dicari");
   keepScreenOn();
   resumeLoop();
-});
+}
+
+$("start-scan").addEventListener("click", startScan);
 
 function stopScan() {
   scanSession++;
@@ -359,27 +386,24 @@ torchButton.addEventListener("click", async () => {
 });
 
 function onFrame(values, now) {
-  if (!resultEl.hidden || !keypadEl.hidden) return;
+  if (!resultEl.hidden) return;
   // Every decoded value (valid or not) takes part in confirmation, so a misread
   // between two good reads breaks the streak. Only then filter to 10-digit tags.
-  const confirmed = confirmReads(values.map((v) => String(v).trim()), now).filter(isValidScan);
-  for (const number of confirmed) {
-    if (!cooldown.shouldReport(number, now)) continue;
-    handleNumber(number, "kamera");
+  const confirmed = confirmReads(values.map((v) => String(v).trim()), now).filter((c) => isValidScan(c.value));
+  for (const { value: number, ms } of confirmed) {
+    if (number === lastReported || !cooldown.shouldReport(number, now)) continue;
+    lastReported = number;
+    handleNumber(number, ms);
     if (!resultEl.hidden) break; // one alarm at a time
   }
 }
 
-// Camera and manual entry go through exactly this path.
-function handleNumber(number, source) {
+function handleNumber(number, ms) {
   const match = matchTag(number, watchlist);
-  addLog(number, match, source);
-  if (match.result === "none") {
-    tick();
-    setStatus("tidak dicari", number);
-    return;
-  }
-  openResult(number, match);
+  addLog(number, match);
+  beep();
+  showRead(number, ms, match.near);
+  if (match.result === "full") openResult(number, match);
 }
 
 // --- result screen -------------------------------------------------------------
@@ -388,68 +412,24 @@ const resultEl = $("result");
 let alarmTimer = null;
 let currentResult = null;
 
-function digitsWithMarks(digits, reference) {
-  const p = el("p", "num");
-  const flags = diffDigits(digits, reference);
-  const formatted = formatTagNumber(digits);
-  let index = 0;
-  for (const ch of formatted) {
-    if (ch === " ") { p.append(" "); continue; }
-    if (flags[index]) p.append(el("mark", "", ch));
-    else p.append(ch);
-    index++;
-  }
-  return p;
-}
-
 function openResult(number, match) {
   pauseLoop();
   currentResult = { number, match };
-  const isFull = match.result === "full";
-  resultEl.classList.toggle("partial", !isFull);
-  $("result-title").textContent = isFull ? "Cocok" : "Cocok sebagian — cek kode maskapai";
-
-  const body = $("result-body");
-  body.replaceChildren();
-  const notes = [];
-  if (isFull) {
-    body.append(el("p", "result-label", "Nomor tag"), el("p", "result-number num", formatTagNumber(number)));
-    if (match.full.found) notes.push("Nomor ini sudah ditandai ketemu sebelumnya.");
-    if (match.partials.length) notes.push(`Ada juga ${match.partials.length} nomor lain di daftar dengan 6 digit akhir sama.`);
-    $("result-found").hidden = match.full.found;
-  } else {
-    body.className = "result-compare";
-    body.append(el("p", "result-label", "Hasil scan"), el("p", "num", formatTagNumber(number)));
-    for (const entry of match.partials) {
-      const row = el("div", "partial-row");
-      row.append(
-        el("p", "result-label", entry.kind === "serial" ? "Di daftar (nomor seri saja)" : "Di daftar — digit yang beda ditandai"),
-        digitsWithMarks(entry.number, number),
-      );
-      if (entry.found) {
-        row.append(el("p", "result-note", "Sudah ditandai ketemu."));
-      } else {
-        const btn = el("button", "", "Ini yang dicari — tandai ketemu");
-        btn.type = "button";
-        btn.addEventListener("click", () => { markFound(entry.number); closeResult(); });
-        row.append(btn);
-      }
-      body.append(row);
-    }
-    notes.push("Periksa nomor di tag dengan mata sebelum mengambil bagasi.");
-    $("result-found").hidden = true;
-  }
-  if (isFull) body.className = "";
-  $("result-note").textContent = notes.join(" ");
+  $("result-title").textContent = "Ketemu!";
+  $("result-body").replaceChildren(
+    el("p", "result-label", "Nomor tag"),
+    el("p", "result-number num", formatTagNumber(number)),
+  );
+  $("result-note").textContent = match.full.found ? "Nomor ini sudah ditandai ketemu sebelumnya." : "";
+  $("result-found").hidden = match.full.found;
   resultEl.hidden = false;
 
-  const play = isFull ? alarmFull : alarmPartial;
-  play();
+  alarmFull();
   let repeats = 0;
   clearInterval(alarmTimer);
   alarmTimer = setInterval(() => {
     if (++repeats > ALARM_REPEATS) { clearInterval(alarmTimer); return; }
-    play();
+    alarmFull();
   }, ALARM_REPEAT_MS);
   $("result-continue").focus();
 }
@@ -460,64 +440,13 @@ function closeResult() {
   if (currentResult) cooldown.suppress(currentResult.number, performance.now(), AFTER_DISMISS_QUIET_MS);
   currentResult = null;
   resultEl.hidden = true;
-  if (camera) {
-    setStatus("Arahkan kamera ke barcode tag");
-    resumeLoop();
-  }
+  if (camera) resumeLoop();
 }
 
 $("result-continue").addEventListener("click", closeResult);
 $("result-found").addEventListener("click", () => {
   if (currentResult?.match.full) markFound(currentResult.match.full.number);
   closeResult();
-});
-
-// --- manual keypad ---------------------------------------------------------------
-
-const keypadEl = $("keypad");
-let typed = "";
-
-function renderKeypad() {
-  $("keypad-display").textContent = typed ? formatTagNumber(typed) : " ";
-  $("keypad-check").disabled = !(typed.length === 6 || typed.length === 10);
-  $("keypad-hint").textContent = typed.length && typed.length !== 6 && typed.length < 10
-    ? `${typed.length} digit — perlu 6 atau 10`
-    : "Ketik 10 digit, atau 6 digit nomor seri";
-}
-
-function openKeypad() {
-  pauseLoop();
-  typed = "";
-  renderKeypad();
-  keypadEl.hidden = false;
-}
-
-function closeKeypad() {
-  keypadEl.hidden = true;
-  if (camera && resultEl.hidden) resumeLoop();
-}
-
-$("manual-open").addEventListener("click", openKeypad);
-$("manual-open-idle").addEventListener("click", openKeypad);
-
-$("keys").addEventListener("click", (event) => {
-  const key = event.target.closest("button[data-key]")?.dataset.key;
-  if (!key) return;
-  if (key === "close") return closeKeypad();
-  if (key === "back") typed = typed.slice(0, -1);
-  else if (key === "check") {
-    if (typed.length !== 6 && typed.length !== 10) return;
-    unlockAudio(); // manual entry may be used without ever starting the camera
-    const number = typed;
-    keypadEl.hidden = true;
-    handleNumber(number, "manual");
-    if (resultEl.hidden) {
-      if (camera) resumeLoop();
-      else $("scan-feedback").textContent = `${formatTagNumber(number)}: tidak dicari.`;
-    }
-    return;
-  } else if (typed.length < 10) typed += key;
-  renderKeypad();
 });
 
 // --- lifecycle -------------------------------------------------------------------

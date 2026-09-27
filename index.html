@@ -19,7 +19,7 @@
   <section id="view-daftar" data-view="daftar">
     <h1>Bagasi yang dicari</h1>
     <form class="add-form" id="add-form">
-      <textarea id="bulk-input" placeholder="Tempel nomor tag di sini. Boleh banyak sekaligus." aria-label="Nomor tag bagasi"></textarea>
+      <textarea id="bulk-input" inputmode="numeric" placeholder="Tempel atau ketik nomor tag 10 angka. Boleh banyak sekaligus, satu per baris." aria-label="Nomor tag bagasi"></textarea>
       <button type="submit" class="primary">Tambah ke daftar</button>
     </form>
     <p class="feedback" id="feedback" role="status" aria-live="polite"></p>
@@ -36,7 +36,6 @@
     <p id="scan-summary"></p>
     <div class="stack">
       <button type="button" class="primary" id="start-scan">Mulai scan</button>
-      <button type="button" id="manual-open-idle">Ketik nomor</button>
     </div>
     <p class="feedback" id="scan-feedback" role="status" aria-live="polite"></p>
     <p class="error" id="scan-error" role="alert"></p>
@@ -63,13 +62,19 @@
 
 <div class="scanner" id="scanner" hidden>
   <video id="video" playsinline muted autoplay></video>
-  <div class="scan-guide"></div>
-  <div class="scan-status" id="scan-status" aria-live="polite">Arahkan kamera ke barcode tag</div>
-  <div class="scan-controls">
-    <button type="button" id="torch" aria-pressed="false" hidden>Senter</button>
-    <button type="button" id="manual-open">Ketik nomor</button>
-    <button type="button" class="wide" id="stop-scan">Berhenti scan</button>
+  <div class="scan-layer">
+    <p class="scan-count" id="scan-count"></p>
+    <div class="scan-guide"></div>
+    <div class="scan-result" id="scan-result" aria-live="polite">
+      <p class="scan-number num" id="scan-number"></p>
+      <p class="scan-ms num" id="scan-ms"></p>
+    </div>
+    <div class="scan-controls">
+      <button type="button" id="torch" aria-pressed="false" hidden>Senter</button>
+      <button type="button" id="stop-scan">Berhenti scan</button>
+    </div>
   </div>
+  <div class="scan-flash" id="scan-flash"></div>
 </div>
 
 <div class="result" id="result" role="alertdialog" aria-modal="true" aria-labelledby="result-title" hidden>
@@ -79,26 +84,6 @@
   <div class="result-actions">
     <button type="button" class="primary" id="result-found">Tandai sudah ketemu</button>
     <button type="button" id="result-continue">Lanjut scan</button>
-  </div>
-</div>
-
-<div class="keypad" id="keypad" role="dialog" aria-modal="true" aria-label="Ketik nomor tag" hidden>
-  <p class="keypad-display num" id="keypad-display"></p>
-  <p class="keypad-hint" id="keypad-hint">Ketik 10 digit, atau 6 digit nomor seri</p>
-  <div class="keys" id="keys">
-    <button type="button" data-key="1">1</button>
-    <button type="button" data-key="2">2</button>
-    <button type="button" data-key="3">3</button>
-    <button type="button" data-key="4">4</button>
-    <button type="button" data-key="5">5</button>
-    <button type="button" data-key="6">6</button>
-    <button type="button" data-key="7">7</button>
-    <button type="button" data-key="8">8</button>
-    <button type="button" data-key="9">9</button>
-    <button type="button" data-key="back" aria-label="Hapus satu digit">⌫</button>
-    <button type="button" data-key="0">0</button>
-    <button type="button" class="primary" data-key="check" id="keypad-check" disabled>Cek</button>
-    <button type="button" data-key="close" style="grid-column: 1 / -1">Batal</button>
   </div>
 </div>
 
