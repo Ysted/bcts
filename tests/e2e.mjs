@@ -88,7 +88,7 @@ async function openApp(browser, watchlistText) {
   await page.goto(URL_BASE, { waitUntil: "networkidle0" });
   await page.evaluate(() => localStorage.clear());
   await page.reload({ waitUntil: "networkidle0" });
-  await page.$eval("#bulk-input", (el, v) => { el.value = v; }, watchlistText);
+  await page.$eval("#bulk-input", (el, v) => { el.value = v; }, watchlistText.replace(/\n/g, ", "));
   await page.click("#add-form button[type=submit]");
   await page.click('nav button[data-nav="scan"]');
   return { page, errors };
@@ -310,18 +310,59 @@ try {
     await browser.close();
   }
 
-  // Daftar accepts digits only.
+  // Daftar: digits only, focused, multi-line paste, swipe-to-delete, clear all.
   {
     const browser = await launch();
     try {
       const page = await browser.newPage();
+      await page.setViewport({ width: 400, height: 860, isMobile: true, hasTouch: false });
       await page.goto(URL_BASE, { waitUntil: "networkidle0" });
       await page.evaluate(() => localStorage.clear());
       await page.reload({ waitUntil: "networkidle0" });
-      await page.type("#bulk-input", "GA0126abc123456");
+      assert.equal(await page.evaluate(() => document.activeElement.id), "bulk-input", "focused on open");
+      await page.keyboard.type("GA0126abc123456");
       assert.equal(await page.$eval("#bulk-input", (e) => e.value), "0126123456", "letters stripped");
-      await page.screenshot({ path: `${OUT}daftar.png` });
-      console.log("✔ daftar hanya angka");
+      await page.$eval("#bulk-input", (e) => { e.value = ""; });
+
+      // WhatsApp-style multi-line paste into the one-line field.
+      await page.$eval("#bulk-input", (el) => {
+        const data = new DataTransfer();
+        data.setData("text/plain", "Mohon dicari:\n0126123456\n0 990 654321\r\n0657111222\n123456");
+        el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+      });
+      await page.click("#add-form button[type=submit]");
+      const numbers = () => page.evaluate(() => JSON.parse(localStorage.getItem("bcts.watchlist")).map((e) => e.number));
+      assert.deepEqual(await numbers(), ["0126123456", "0990654321", "0657111222"], "multi-line paste");
+      assert.equal(await page.$eval("#bulk-input", (e) => e.value), "123456", "rejected stays in field");
+      assert.equal(await page.evaluate(() => document.activeElement.id), "bulk-input", "focus kept");
+      assert.equal(await page.$$eval("#watchlist button", (b) => b.map((x) => x.textContent).join()), "Hapus,Hapus,Hapus", "only Hapus buttons");
+
+      // Swipe the second row left, tap Hapus.
+      const row = await page.$$("#watchlist .entry-number");
+      const box = await row[1].boundingBox();
+      await page.mouse.move(box.x + box.width - 20, box.y + box.height / 2);
+      await page.mouse.down();
+      for (let i = 1; i <= 10; i++) await page.mouse.move(box.x + box.width - 20 - i * 12, box.y + box.height / 2);
+      await page.mouse.up();
+      await new Promise((r) => setTimeout(r, 300));
+      await page.screenshot({ path: `${OUT}daftar-geser.png` });
+      const del = await page.$$("#watchlist .row-delete");
+      const delBox = await del[1].boundingBox();
+      await page.mouse.click(delBox.x + delBox.width / 2, delBox.y + delBox.height / 2);
+      assert.deepEqual(await numbers(), ["0126123456", "0657111222"], "swipe delete");
+
+      // A tap without swiping deletes nothing.
+      const r0 = await (await page.$$("#watchlist .entry-number"))[0].boundingBox();
+      await page.mouse.click(r0.x + r0.width - 40, r0.y + r0.height / 2);
+      assert.equal((await numbers()).length, 2, "plain tap keeps row");
+
+      // Clear all needs two taps.
+      await page.click("#clear-all");
+      assert.equal((await numbers()).length, 2, "first tap only asks");
+      assert.equal(await page.$eval("#clear-all", (e) => e.textContent), "Yakin? Tekan lagi");
+      await page.click("#clear-all");
+      assert.deepEqual(await numbers(), [], "cleared");
+      console.log("✔ daftar: fokus, hanya angka, tempel banyak baris, geser hapus, hapus semua");
     } finally {
       await browser.close();
     }

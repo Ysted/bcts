@@ -17,18 +17,21 @@
 <body>
 <main>
   <section id="view-daftar" data-view="daftar">
-    <h1>Bagasi yang dicari</h1>
     <form class="add-form" id="add-form">
-      <textarea id="bulk-input" inputmode="numeric" placeholder="Tempel atau ketik nomor tag 10 angka. Boleh banyak sekaligus, satu per baris." aria-label="Nomor tag bagasi"></textarea>
-      <button type="submit" class="primary">Tambah ke daftar</button>
+      <input id="bulk-input" type="text" inputmode="numeric" autocomplete="off" enterkeyhint="done"
+        placeholder="Nomor bagasi yang akan dicari" aria-label="Nomor bagasi yang akan dicari">
+      <div class="add-row">
+        <button type="button" id="paste">Paste</button>
+        <button type="submit" class="primary">Tambah ke daftar</button>
+      </div>
     </form>
     <p class="feedback" id="feedback" role="status" aria-live="polite"></p>
     <p class="empty" id="empty-state">Tempel nomor bagasi yang dicari untuk mulai.</p>
-    <ul class="rows watchlist" id="watchlist" hidden></ul>
-    <div class="list-footer" id="list-footer" hidden>
+    <div class="list-head" id="list-head" hidden>
       <span id="list-count"></span>
       <button type="button" id="clear-all">Hapus semua</button>
     </div>
+    <ul class="rows watchlist" id="watchlist" hidden></ul>
   </section>
 
   <section id="view-scan" data-view="scan" hidden>

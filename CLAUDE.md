@@ -30,6 +30,7 @@ Menggantikan bagian PRD yang bertentangan:
 - Tidak ada input manual / tombol Ketik nomor. Atensi hanya diisi di halaman Daftar.
 - Membuka tab Scan langsung menyalakan kamera. Setiap baca berbunyi beep, layar berkedip, dan waktu baca ("terbaca N ms") ditampilkan.
 - Tag yang sama tidak dicatat ulang sampai ada tag lain yang terbaca.
+- Daftar (v4): kolom 1 baris yang selalu fokus, tombol Paste + Tambah ke daftar; baris digeser ke kiri untuk Hapus; tidak ada tombol tandai/batal ketemu di baris (tandai hanya dari layar Ketemu!).
 
 ## Jebakan teknis yang sudah diketahui
 

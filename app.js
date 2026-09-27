@@ -5,7 +5,7 @@ import {
 import { createDetector, openCamera, startScanLoop, cameraErrorMessage } from "./scanner.js";
 import { unlockAudio, alarmFull, beep, stopVibration } from "./alarm.js";
 
-const APP_VERSION = "v3"; // keep in step with CACHE in sw.js
+const APP_VERSION = "v4"; // keep in step with CACHE in sw.js
 const WATCHLIST_KEY = "bcts.watchlist";
 const LOG_KEY = "bcts.log";
 const LOG_LIMIT = 500;
@@ -97,7 +97,7 @@ function renderWatchlist() {
   listEl.replaceChildren(...watchlist.map(renderEntry));
   const hasEntries = watchlist.length > 0;
   listEl.hidden = !hasEntries;
-  $("list-footer").hidden = !hasEntries;
+  $("list-head").hidden = !hasEntries;
   $("empty-state").hidden = hasEntries;
   const foundCount = watchlist.filter((e) => e.found).length;
   $("list-count").textContent = `${watchlist.length} nomor · ${foundCount} sudah ketemu`;
@@ -113,59 +113,132 @@ function renderEntry(entry) {
   const li = el("li");
   li.classList.toggle("found", entry.found);
 
-  const number = el("div", "entry-number");
-  number.append(el("span", "entry-digits num", formatTagNumber(entry.number)));
-  number.append(el("span", "entry-kind", entry.found ? "Sudah ketemu" : ""));
-
-  const toggle = el("button", "", entry.found ? "Batal ketemu" : "Tandai sudah ketemu");
-  toggle.type = "button";
-  toggle.dataset.action = "toggle-found";
-  toggle.dataset.number = entry.number;
-
-  const remove = el("button", "", "Hapus");
+  const remove = el("button", "row-delete", "Hapus");
   remove.type = "button";
-  remove.dataset.action = "remove";
   remove.dataset.number = entry.number;
   remove.setAttribute("aria-label", `Hapus ${formatTagNumber(entry.number)}`);
 
-  li.append(number, toggle, remove);
+  const number = el("div", "entry-number");
+  number.append(el("span", "entry-digits num", formatTagNumber(entry.number)));
+  if (entry.found) number.append(el("span", "entry-kind", "Sudah ketemu"));
+
+  li.append(remove, number);
   return li;
 }
 
-// Digits only; spaces, newlines, commas, semicolons and dashes still separate/group numbers.
-$("bulk-input").addEventListener("input", (event) => {
-  const clean = event.target.value.replace(/[^\d\s,;-]/g, "");
-  if (clean !== event.target.value) event.target.value = clean;
+// --- swipe left to reveal Hapus (one row open at a time) ---
+const SWIPE_OPEN_PX = 96;
+let openRow = null;
+let drag = null;
+
+function setRowOffset(row, px) {
+  row.style.transform = px ? `translateX(${px}px)` : "";
+}
+
+function closeOpenRow() {
+  if (openRow) setRowOffset(openRow, 0);
+  openRow = null;
+}
+
+listEl.addEventListener("pointerdown", (event) => {
+  const row = event.target.closest(".entry-number");
+  if (!row) return;
+  if (openRow && openRow !== row) closeOpenRow();
+  drag = { row, startX: event.clientX, startY: event.clientY, base: row === openRow ? -SWIPE_OPEN_PX : 0, dx: 0, active: false };
+});
+
+listEl.addEventListener("pointermove", (event) => {
+  if (!drag) return;
+  const dx = event.clientX - drag.startX;
+  if (!drag.active) {
+    if (Math.abs(event.clientY - drag.startY) > Math.abs(dx)) { drag = null; return; } // vertical scroll
+    if (Math.abs(dx) < 8) return;
+    drag.active = true;
+    drag.row.classList.add("dragging");
+    drag.row.setPointerCapture?.(event.pointerId);
+  }
+  drag.dx = dx;
+  setRowOffset(drag.row, Math.min(0, Math.max(-SWIPE_OPEN_PX, drag.base + dx)));
+});
+
+function endDrag() {
+  if (!drag) return;
+  const { row, base, dx, active } = drag;
+  drag = null;
+  row.classList.remove("dragging");
+  const open = active ? base + dx < -SWIPE_OPEN_PX / 2 : false;
+  setRowOffset(row, open ? -SWIPE_OPEN_PX : 0);
+  openRow = open ? row : null;
+}
+listEl.addEventListener("pointerup", endDrag);
+listEl.addEventListener("pointercancel", endDrag);
+document.addEventListener("pointerdown", (event) => {
+  if (openRow && !event.target.closest("#watchlist")) closeOpenRow();
+});
+
+const input = $("bulk-input");
+
+// A one-line field would glue pasted lines into one long digit run, so line
+// breaks become ", " first. Then digits only; spaces, commas, semicolons and
+// dashes still separate/group numbers.
+function cleanInput(text) {
+  return text.replace(/[\r\n]+/g, ", ").replace(/[^\d\s,;-]/g, "").replace(/^[\s,;]+|[\s,;]+$/g, "");
+}
+
+function insertText(text) {
+  const clean = cleanInput(text);
+  if (!clean) return;
+  const start = input.selectionStart ?? input.value.length;
+  const end = input.selectionEnd ?? input.value.length;
+  const before = input.value.slice(0, start);
+  const after = input.value.slice(end);
+  const sep = (s) => (s && !/[\s,;]$/.test(s) ? ", " : "");
+  input.value = before + sep(before) + clean + (after && !/^[\s,;]/.test(after) ? ", " : "") + after;
+  input.focus();
+}
+
+input.addEventListener("paste", (event) => {
+  event.preventDefault();
+  insertText(event.clipboardData?.getData("text") || "");
+});
+
+input.addEventListener("input", () => {
+  const clean = input.value.replace(/[^\d\s,;-]/g, "");
+  if (clean !== input.value) input.value = clean;
+});
+
+$("paste").addEventListener("click", async () => {
+  try {
+    insertText(await navigator.clipboard.readText());
+  } catch {
+    showFeedback(feedback, "HP tidak mengizinkan membaca clipboard. Tekan lama di kolom nomor, lalu pilih Tempel.", true);
+    input.focus();
+  }
 });
 
 $("add-form").addEventListener("submit", (event) => {
   event.preventDefault();
-  const input = $("bulk-input");
   const result = parseBulkInput(input.value, watchlist.map((e) => e.number));
   watchlist.push(...result.added.map((e) => ({ ...e, found: false })));
   saveWatchlist();
   renderWatchlist();
   showFeedback(feedback, summarizeAddResult(result), result.rejected.length > 0);
-  // Keep rejected tokens in the box so the officer can fix them; clear the rest.
-  input.value = result.rejected.join("\n");
+  // Keep rejected tokens in the field so the officer can fix them; clear the rest.
+  input.value = result.rejected.join(", ");
+  input.focus();
 });
 
 listEl.addEventListener("click", (event) => {
-  const button = event.target.closest("button[data-action]");
-  if (!button) return;
-  const { action, number } = button.dataset;
-  if (action === "remove") {
-    watchlist = watchlist.filter((e) => e.number !== number);
-    showFeedback(feedback, `${formatTagNumber(number)} dihapus.`);
-  } else if (action === "toggle-found") {
-    const entry = watchlist.find((e) => e.number === number);
-    if (entry) entry.found = !entry.found;
-  }
+  const number = event.target.closest(".row-delete")?.dataset.number;
+  if (!number) return;
+  openRow = null;
+  watchlist = watchlist.filter((e) => e.number !== number);
+  showFeedback(feedback, `${formatTagNumber(number)} dihapus.`);
   saveWatchlist();
   renderWatchlist();
 });
 
-twoTapButton($("clear-all"), "Tekan lagi untuk hapus semua", () => {
+twoTapButton($("clear-all"), "Yakin? Tekan lagi", () => {
   const count = watchlist.length;
   watchlist = [];
   saveWatchlist();
@@ -249,6 +322,7 @@ function showView(name) {
     else b.removeAttribute("aria-current");
   });
   window.scrollTo(0, 0);
+  if (name === "daftar") input.focus({ preventScroll: true }); // ready to paste any time
 }
 navButtons.forEach((b) => b.addEventListener("click", () => showView(b.dataset.nav)));
 
@@ -464,4 +538,5 @@ if ("serviceWorker" in navigator) {
 
 renderWatchlist();
 renderLog();
+input.focus({ preventScroll: true });
 $("app-version").textContent = `BCTS ${APP_VERSION}`;

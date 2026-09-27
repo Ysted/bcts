@@ -39,29 +39,40 @@ button:disabled { opacity: 0.4; }
 button.primary { background: var(--text); color: #fff; border-color: var(--text); width: 100%; font-weight: 600; }
 button.confirming { border-color: var(--warn); color: var(--warn); }
 
-textarea {
+.add-form input {
   width: 100%;
-  min-height: 120px;
+  min-height: var(--touch);
   font: inherit;
-  padding: 12px;
+  font-size: 1.2rem;
+  padding: 0 14px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--surface);
   color: var(--text);
-  resize: vertical;
 }
 .add-form { display: grid; gap: 12px; }
+.add-row { display: grid; grid-template-columns: 1fr 2.2fr; gap: 12px; }
 .feedback { min-height: 1.5em; margin: 12px 0 0; color: var(--muted); }
 .feedback.warning { color: var(--warn); }
 .error { color: var(--warn); }
 
 /* watchlist + log rows */
 .rows { list-style: none; margin: 24px 0 0; padding: 0; border-top: 1px solid var(--line); }
-.watchlist li {
-  display: grid; grid-template-columns: 1fr auto; gap: 8px;
-  padding: 12px 0; border-bottom: 1px solid var(--line);
+.list-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 24px; color: var(--muted); }
+.list-head button { font-size: 0.9rem; padding: 0 14px; }
+.list-head + .rows { margin-top: 8px; }
+/* iOS-style row: swipe left to reveal Hapus */
+.watchlist li { position: relative; overflow: hidden; border-bottom: 1px solid var(--line); }
+.row-delete {
+  position: absolute; top: 0; right: 0; bottom: 0; width: 96px;
+  border: none; border-radius: 0; background: #dc2626; color: #fff; font-weight: 600;
 }
-.entry-number { grid-column: 1 / -1; font-size: 1.5rem; font-weight: 600; }
+.entry-number {
+  position: relative; padding: 12px 0; background: var(--bg);
+  font-size: 1.5rem; font-weight: 600;
+  touch-action: pan-y; transition: transform 0.2s ease-out;
+}
+.entry-number.dragging { transition: none; }
 .entry-kind { display: block; font-size: 0.85rem; font-weight: 400; color: var(--muted); }
 .watchlist li.found .entry-digits { color: var(--found); text-decoration: line-through; }
 .watchlist li.found .entry-kind { color: var(--found); }
