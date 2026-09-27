@@ -17,28 +17,26 @@
 <body>
 <main>
   <section id="view-daftar" data-view="daftar">
-    <form class="add-form" id="add-form">
-      <input id="bulk-input" type="text" inputmode="numeric" autocomplete="off" enterkeyhint="done"
-        placeholder="Nomor bagasi yang akan dicari" aria-label="Nomor bagasi yang akan dicari">
-      <div class="add-row">
-        <button type="button" id="paste">Paste</button>
-        <button type="submit" class="primary">Tambah ke daftar</button>
-      </div>
-    </form>
     <p class="feedback" id="feedback" role="status" aria-live="polite"></p>
-    <p class="empty" id="empty-state">Tempel nomor bagasi yang dicari untuk mulai.</p>
+    <p class="empty" id="empty-state">Tekan + untuk menambah nomor bagasi yang dicari.</p>
     <div class="list-head" id="list-head" hidden>
       <span id="list-count"></span>
-      <button type="button" id="clear-all">Hapus semua</button>
+      <span class="list-actions">
+        <button type="button" id="select-cancel" hidden>Batal</button>
+        <button type="button" id="select-action">Pilih semua</button>
+      </span>
     </div>
     <ul class="rows watchlist" id="watchlist" hidden></ul>
+    <button type="button" class="fab" id="add-open" aria-label="Tambah nomor bagasi">+</button>
   </section>
 
   <section id="view-scan" data-view="scan" hidden>
     <h1>Scan</h1>
     <p id="scan-summary"></p>
+    <p class="scanned-total"><span class="num" id="scanned-total">0</span> tag discan</p>
     <div class="stack">
       <button type="button" class="primary" id="start-scan">Mulai scan</button>
+      <button type="button" id="reset-count">Mulai hitungan baru</button>
     </div>
     <p class="feedback" id="scan-feedback" role="status" aria-live="polite"></p>
     <p class="error" id="scan-error" role="alert"></p>
@@ -89,6 +87,18 @@
     <button type="button" id="result-continue">Lanjut scan</button>
   </div>
 </div>
+
+<dialog class="add-dialog" id="add-dialog" aria-label="Tambah nomor bagasi">
+  <form class="add-form" id="add-form">
+    <div class="input-wrap">
+      <input id="bulk-input" type="text" inputmode="numeric" autocomplete="off" enterkeyhint="done"
+        placeholder="Nomor bagasi yang akan dicari" aria-label="Nomor bagasi yang akan dicari">
+      <button type="button" id="paste">Paste</button>
+    </div>
+    <p class="feedback warning" id="add-feedback" role="status" aria-live="polite"></p>
+    <button type="submit" class="primary">Tambah ke daftar</button>
+  </form>
+</dialog>
 
 <script type="module" src="app.js"></script>
 </body>

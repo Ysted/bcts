@@ -88,8 +88,10 @@ async function openApp(browser, watchlistText) {
   await page.goto(URL_BASE, { waitUntil: "networkidle0" });
   await page.evaluate(() => localStorage.clear());
   await page.reload({ waitUntil: "networkidle0" });
+  await page.click("#add-open");
   await page.$eval("#bulk-input", (el, v) => { el.value = v; }, watchlistText.replace(/\n/g, ", "));
   await page.click("#add-form button[type=submit]");
+  assert.equal(await page.$eval("#add-dialog", (d) => d.open), false, "dialog closes after a clean add");
   await page.click('nav button[data-nav="scan"]');
   return { page, errors };
 }
@@ -180,6 +182,7 @@ try {
       await page.goto(URL_BASE, { waitUntil: "networkidle0" });
       await page.evaluate(() => localStorage.clear());
       await page.reload({ waitUntil: "networkidle0" });
+      await page.click("#add-open");
       await page.$eval("#bulk-input", (el) => { el.value = "0126123456"; });
       await page.click("#add-form button[type=submit]");
       await page.click('nav button[data-nav="scan"]');
@@ -236,6 +239,7 @@ try {
       await new Promise((r) => setTimeout(r, 6000));
       const log = await page.evaluate(() => JSON.parse(localStorage.getItem("bcts.log")));
       assert.deepEqual(log.map((e) => e.number), ["0994777888", "0990111222", "0994777888"]);
+      assert.equal(await page.$eval("#scan-count strong", (e) => e.textContent), "2", "unique count");
     },
   );
   // Two bags in one frame: both confirmed, the listed one alarms.
@@ -283,6 +287,7 @@ try {
     assert.equal(wl.find((e) => e.number === "0126123456").found, true, "marked found from result");
     assert.ok((await page.$eval("#scan-count", (e) => e.textContent)).includes("1 ketemu"), "counter");
     await page.click("#stop-scan");
+    assert.equal(await page.$eval("#scanned-total", (e) => e.textContent), "1", "scanned total");
 
     // Service worker ready → offline reload must still work, including ZXing.
     await page.evaluate(() => navigator.serviceWorker.ready);
@@ -300,6 +305,11 @@ try {
     await page.click("#result-continue");
     await page.click("#stop-scan"); // the camera covers the nav while it runs
     assert.equal(await isShown(page, "#scanner"), false, "camera off");
+    // Same tag again after reload: still counted once.
+    assert.equal(await page.$eval("#scanned-total", (e) => e.textContent), "1", "count survives reload, no double count");
+    await page.click("#reset-count");
+    await page.click("#reset-count");
+    assert.equal(await page.$eval("#scanned-total", (e) => e.textContent), "0", "reset count");
     await page.click('nav button[data-nav="log"]');
     await page.screenshot({ path: `${OUT}log.png` });
     const metas = await page.$$eval("#log-list li .log-meta", (m) => m.map((x) => x.textContent));
@@ -319,7 +329,13 @@ try {
       await page.goto(URL_BASE, { waitUntil: "networkidle0" });
       await page.evaluate(() => localStorage.clear());
       await page.reload({ waitUntil: "networkidle0" });
-      assert.equal(await page.evaluate(() => document.activeElement.id), "bulk-input", "focused on open");
+      // Page shows only the list and a round + centred above the nav.
+      assert.equal(await page.$eval("#add-dialog", (d) => d.open), false, "form hidden on the page");
+      const fab = await page.$eval("#add-open", (e) => e.getBoundingClientRect().toJSON());
+      const navTop = await page.$eval("nav", (e) => e.getBoundingClientRect().top);
+      assert.ok(Math.abs(fab.left + fab.width / 2 - 200) < 2 && fab.bottom < navTop, "fab centred above nav");
+      await page.click("#add-open");
+      assert.equal(await page.evaluate(() => document.activeElement.id), "bulk-input", "focused when the dialog opens");
       await page.keyboard.type("GA0126abc123456");
       assert.equal(await page.$eval("#bulk-input", (e) => e.value), "0126123456", "letters stripped");
       await page.$eval("#bulk-input", (e) => { e.value = ""; });
@@ -335,6 +351,10 @@ try {
       assert.deepEqual(await numbers(), ["0126123456", "0990654321", "0657111222"], "multi-line paste");
       assert.equal(await page.$eval("#bulk-input", (e) => e.value), "123456", "rejected stays in field");
       assert.equal(await page.evaluate(() => document.activeElement.id), "bulk-input", "focus kept");
+      assert.equal(await page.$eval("#add-dialog", (d) => d.open), true, "dialog stays open with a rejected number");
+      await page.screenshot({ path: `${OUT}daftar-modal.png` });
+      await page.mouse.click(200, 700); // tap outside the dialog
+      assert.equal(await page.$eval("#add-dialog", (d) => d.open), false, "tap outside closes");
       assert.equal(await page.$$eval("#watchlist button", (b) => b.map((x) => x.textContent).join()), "Hapus,Hapus,Hapus", "only Hapus buttons");
 
       // Swipe the second row left, tap Hapus.
@@ -356,13 +376,65 @@ try {
       await page.mouse.click(r0.x + r0.width - 40, r0.y + r0.height / 2);
       assert.equal((await numbers()).length, 2, "plain tap keeps row");
 
-      // Clear all needs two taps.
-      await page.click("#clear-all");
+      // Paste button floats inside the field.
+      await page.click("#add-open");
+      const inBox = await page.$eval(".input-wrap input", (e) => e.getBoundingClientRect().toJSON());
+      const pBox = await page.$eval("#paste", (e) => e.getBoundingClientRect().toJSON());
+      assert.ok(pBox.left > inBox.left && pBox.right < inBox.right && pBox.top > inBox.top && pBox.bottom < inBox.bottom, "paste inside field");
+      assert.equal(Math.round(inBox.right - pBox.right), Math.round(pBox.top - inBox.top), "paste inset symmetric");
+      await page.keyboard.press("Escape");
+
+      // Hold a row to select it; tap another to add it; Batal clears.
+      const action = () => page.$eval("#select-action", (e) => e.textContent);
+      assert.equal(await action(), "Pilih semua");
+      const hold = async (i) => {
+        const b = await (await page.$$("#watchlist .entry-number"))[i].boundingBox();
+        await page.mouse.move(b.x + 40, b.y + b.height / 2);
+        await page.mouse.down();
+        await new Promise((r) => setTimeout(r, 700));
+        await page.mouse.up();
+      };
+      const tapRow = async (i) => {
+        const b = await (await page.$$("#watchlist .entry-number"))[i].boundingBox();
+        await page.mouse.click(b.x + 40, b.y + b.height / 2);
+      };
+      await hold(0);
+      assert.equal(await action(), "Hapus (1)", "hold selects");
+      await tapRow(1);
+      assert.equal(await action(), "Hapus (2)", "tap adds");
+      await tapRow(1);
+      assert.equal(await action(), "Hapus (1)", "tap removes");
+      await page.click("#select-cancel");
+      assert.equal(await action(), "Pilih semua", "cancel");
+
+      // Hold one, delete it with confirmation.
+      await hold(1);
+      await page.click("#select-action");
       assert.equal((await numbers()).length, 2, "first tap only asks");
-      assert.equal(await page.$eval("#clear-all", (e) => e.textContent), "Yakin? Tekan lagi");
-      await page.click("#clear-all");
-      assert.deepEqual(await numbers(), [], "cleared");
-      console.log("✔ daftar: fokus, hanya angka, tempel banyak baris, geser hapus, hapus semua");
+      await page.click("#select-action");
+      assert.deepEqual(await numbers(), ["0126123456"], "deleted selected");
+
+      // Only the list scrolls: fill it, scroll it, the form must not move.
+      const many = Array.from({ length: 30 }, (_, i) => `0990${String(100000 + i)}`).join(", ");
+      await page.click("#add-open");
+      await page.$eval("#bulk-input", (e, v) => { e.value = v; }, many);
+      await page.click("#add-form button[type=submit]");
+      const formTop = await page.$eval("#list-head", (e) => e.getBoundingClientRect().top);
+      await page.$eval("#watchlist", (e) => { e.scrollTop = 400; });
+      await page.evaluate(() => window.scrollTo(0, 400));
+      assert.ok(await page.$eval("#watchlist", (e) => e.scrollTop > 0), "list scrolls");
+      assert.equal(await page.evaluate(() => window.scrollY), 0, "page itself does not scroll");
+      assert.equal(await page.$eval("#list-head", (e) => e.getBoundingClientRect().top), formTop, "header fixed");
+      await page.screenshot({ path: `${OUT}daftar-panjang.png` });
+
+      // Pilih semua → Hapus (n) → confirm.
+      await page.click("#select-action");
+      assert.equal(await action(), "Hapus (31)");
+      await page.screenshot({ path: `${OUT}daftar-pilih.png` });
+      await page.click("#select-action");
+      await page.click("#select-action");
+      assert.deepEqual(await numbers(), [], "all deleted");
+      console.log("✔ daftar: fokus, hanya angka, tempel banyak baris, geser hapus, tahan untuk pilih, pilih semua, hanya daftar yang scroll");
     } finally {
       await browser.close();
     }

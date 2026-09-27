@@ -30,7 +30,8 @@ Menggantikan bagian PRD yang bertentangan:
 - Tidak ada input manual / tombol Ketik nomor. Atensi hanya diisi di halaman Daftar.
 - Membuka tab Scan langsung menyalakan kamera. Setiap baca berbunyi beep, layar berkedip, dan waktu baca ("terbaca N ms") ditampilkan.
 - Tag yang sama tidak dicatat ulang sampai ada tag lain yang terbaca.
-- Daftar (v4): kolom 1 baris yang selalu fokus, tombol Paste + Tambah ke daftar; baris digeser ke kiri untuk Hapus; tidak ada tombol tandai/batal ketemu di baris (tandai hanya dari layar Ketemu!).
+- Daftar (v5): halaman hanya berisi daftar + tombol + bulat di tengah bawah; kolom nomor (Paste di dalamnya) dan Tambah ke daftar ada di modal. Hanya daftar yang scroll. Geser kiri untuk hapus satu; tahan untuk memilih, lalu Pilih semua / Hapus (N) di kanan atas dengan konfirmasi. Tandai ketemu hanya dari layar Ketemu!.
+- Penghitung (v5): tiap tag dihitung sekali untuk dicocokkan dengan manifest; bertahan sampai Mulai hitungan baru.
 
 ## Jebakan teknis yang sudah diketahui
 

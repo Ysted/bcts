@@ -109,9 +109,10 @@ test("teks log siap kirim: hanya Match yang berlabel", () => {
     { number: "0126123456", time: t, result: "full" },
     { number: "0994000001", time: t, result: "none" },
     { number: "0657123456", time: t, result: "partial", source: "manual" }, // entri lama v2
-  ]);
+  ], 2);
   assert.equal(text, [
     "Log scan bagasi",
+    "Jumlah tag discan: 2",
     "27/09 07:05:09  0 126 123456  Match",
     "27/09 07:05:09  0 994 000001",
     "27/09 07:05:09  0 657 123456",

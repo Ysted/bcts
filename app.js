@@ -5,9 +5,10 @@ import {
 import { createDetector, openCamera, startScanLoop, cameraErrorMessage } from "./scanner.js";
 import { unlockAudio, alarmFull, beep, stopVibration } from "./alarm.js";
 
-const APP_VERSION = "v4"; // keep in step with CACHE in sw.js
+const APP_VERSION = "v5"; // keep in step with CACHE in sw.js
 const WATCHLIST_KEY = "bcts.watchlist";
 const LOG_KEY = "bcts.log";
+const COUNTED_KEY = "bcts.counted"; // unique tags scanned since "Mulai hitungan baru"
 const LOG_LIMIT = 500;
 const CONFIRM_MS = 3000;
 const ALARM_REPEAT_MS = 2500;
@@ -41,6 +42,7 @@ const STORAGE_WARNING = "Perhatian: data tidak bisa disimpan di HP ini dan akan 
 // v2 also accepted 6-digit serials; those can never match now, so they are dropped.
 let watchlist = loadList(WATCHLIST_KEY).filter((e) => e && isValidScan(e.number)); // [{ number, found }]
 let scanLog = loadList(LOG_KEY); // [{ number, time, result }]
+const counted = new Set(loadList(COUNTED_KEY));
 
 function saveWatchlist() { saveList(WATCHLIST_KEY, watchlist); }
 function saveLog() { saveList(LOG_KEY, scanLog); }
@@ -100,18 +102,42 @@ function renderWatchlist() {
   $("list-head").hidden = !hasEntries;
   $("empty-state").hidden = hasEntries;
   const foundCount = watchlist.filter((e) => e.found).length;
-  $("list-count").textContent = `${watchlist.length} nomor · ${foundCount} sudah ketemu`;
+  for (const n of selected) if (!watchlist.some((e) => e.number === n)) selected.delete(n);
+  const selecting = selected.size > 0;
+  listEl.classList.toggle("selecting", selecting);
+  $("list-count").textContent = selecting
+    ? `${selected.size} dipilih`
+    : `${watchlist.length} nomor · ${foundCount} sudah ketemu`;
+  $("select-cancel").hidden = !selecting;
+  resetDeleteConfirm();
   $("scan-summary").textContent = hasEntries
     ? `${watchlist.length - foundCount} nomor masih dicari, ${foundCount} sudah ketemu.`
     : "Daftar masih kosong. Isi dulu nomor yang dicari di tab Daftar.";
-  $("scan-count").textContent = hasEntries
-    ? `${watchlist.length - foundCount} dicari · ${foundCount} ketemu`
-    : "Daftar kosong";
+  renderCount();
+}
+
+function renderCount() {
+  const foundCount = watchlist.filter((e) => e.found).length;
+  const scanCount = $("scan-count");
+  scanCount.replaceChildren(el("strong", "num", String(counted.size)), " discan");
+  scanCount.append(watchlist.length
+    ? ` · ${watchlist.length - foundCount} dicari · ${foundCount} ketemu`
+    : " · daftar kosong");
+  $("scanned-total").textContent = counted.size;
+}
+
+function countTag(number) {
+  if (counted.has(number)) return;
+  counted.add(number);
+  saveList(COUNTED_KEY, [...counted]);
+  renderCount();
 }
 
 function renderEntry(entry) {
   const li = el("li");
   li.classList.toggle("found", entry.found);
+  li.classList.toggle("selected", selected.has(entry.number));
+  li.dataset.number = entry.number;
 
   const remove = el("button", "row-delete", "Hapus");
   remove.type = "button";
@@ -125,6 +151,52 @@ function renderEntry(entry) {
   li.append(remove, number);
   return li;
 }
+
+// --- selection: hold a row to start, tap to toggle, header button acts on it ---
+const LONG_PRESS_MS = 500;
+const selected = new Set();
+let pressTimer = null;
+let swallowClick = false;
+let deleteConfirmTimer = null;
+
+function resetDeleteConfirm() {
+  clearTimeout(deleteConfirmTimer);
+  deleteConfirmTimer = null;
+  const button = $("select-action");
+  button.textContent = selected.size ? `Hapus (${selected.size})` : "Pilih semua";
+  button.classList.toggle("danger", selected.size > 0);
+}
+
+function toggleSelected(number) {
+  if (selected.has(number)) selected.delete(number);
+  else selected.add(number);
+  renderWatchlist();
+}
+
+$("select-action").addEventListener("click", () => {
+  if (!selected.size) {
+    closeOpenRow();
+    watchlist.forEach((e) => selected.add(e.number));
+    renderWatchlist();
+  } else if (!deleteConfirmTimer) {
+    $("select-action").textContent = `Yakin hapus ${selected.size}? Tekan lagi`;
+    deleteConfirmTimer = setTimeout(resetDeleteConfirm, CONFIRM_MS);
+  } else {
+    const count = selected.size;
+    watchlist = watchlist.filter((e) => !selected.has(e.number));
+    selected.clear();
+    saveWatchlist();
+    renderWatchlist();
+    showFeedback(feedback, `${count} nomor dihapus.`);
+  }
+});
+
+$("select-cancel").addEventListener("click", () => {
+  selected.clear();
+  renderWatchlist();
+});
+
+listEl.addEventListener("contextmenu", (event) => event.preventDefault()); // hold must not open a menu
 
 // --- swipe left to reveal Hapus (one row open at a time) ---
 const SWIPE_OPEN_PX = 96;
@@ -143,11 +215,31 @@ function closeOpenRow() {
 listEl.addEventListener("pointerdown", (event) => {
   const row = event.target.closest(".entry-number");
   if (!row) return;
+  const number = row.closest("li").dataset.number;
+  // The hold re-renders the list, so its trailing click may never fire; a new press starts clean.
+  swallowClick = false;
+  clearTimeout(pressTimer);
+  pressTimer = setTimeout(() => {
+    pressTimer = null;
+    drag = null;
+    closeOpenRow();
+    swallowClick = true; // the click that ends this hold must not toggle it back
+    try { navigator.vibrate?.(30); } catch { /* iPhone */ }
+    selected.add(number);
+    renderWatchlist();
+  }, LONG_PRESS_MS);
+  if (selected.size) return; // no swiping while selecting
   if (openRow && openRow !== row) closeOpenRow();
   drag = { row, startX: event.clientX, startY: event.clientY, base: row === openRow ? -SWIPE_OPEN_PX : 0, dx: 0, active: false };
 });
 
+function cancelPress() {
+  clearTimeout(pressTimer);
+  pressTimer = null;
+}
+
 listEl.addEventListener("pointermove", (event) => {
+  if (pressTimer && drag && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 8) cancelPress();
   if (!drag) return;
   const dx = event.clientX - drag.startX;
   if (!drag.active) {
@@ -170,13 +262,24 @@ function endDrag() {
   setRowOffset(row, open ? -SWIPE_OPEN_PX : 0);
   openRow = open ? row : null;
 }
-listEl.addEventListener("pointerup", endDrag);
-listEl.addEventListener("pointercancel", endDrag);
+listEl.addEventListener("pointerup", () => { cancelPress(); endDrag(); });
+listEl.addEventListener("pointercancel", () => { cancelPress(); endDrag(); });
+listEl.addEventListener("scroll", cancelPress, { passive: true });
 document.addEventListener("pointerdown", (event) => {
   if (openRow && !event.target.closest("#watchlist")) closeOpenRow();
 });
 
 const input = $("bulk-input");
+const addDialog = $("add-dialog");
+
+function openAddDialog() {
+  $("add-feedback").textContent = "";
+  addDialog.showModal();
+  input.focus(); // ready to paste straight away
+}
+
+$("add-open").addEventListener("click", openAddDialog);
+addDialog.addEventListener("click", (event) => { if (event.target === addDialog) addDialog.close(); }); // tap outside
 
 // A one-line field would glue pasted lines into one long digit run, so line
 // breaks become ", " first. Then digits only; spaces, commas, semicolons and
@@ -211,7 +314,7 @@ $("paste").addEventListener("click", async () => {
   try {
     insertText(await navigator.clipboard.readText());
   } catch {
-    showFeedback(feedback, "HP tidak mengizinkan membaca clipboard. Tekan lama di kolom nomor, lalu pilih Tempel.", true);
+    showFeedback($("add-feedback"), "HP tidak mengizinkan membaca clipboard. Tekan lama di kolom nomor, lalu pilih Tempel.", true);
     input.focus();
   }
 });
@@ -222,13 +325,21 @@ $("add-form").addEventListener("submit", (event) => {
   watchlist.push(...result.added.map((e) => ({ ...e, found: false })));
   saveWatchlist();
   renderWatchlist();
-  showFeedback(feedback, summarizeAddResult(result), result.rejected.length > 0);
-  // Keep rejected tokens in the field so the officer can fix them; clear the rest.
+  // Rejected tokens stay in the open dialog so the officer can fix them; otherwise close it.
   input.value = result.rejected.join(", ");
-  input.focus();
+  if (result.rejected.length || !result.added.length) {
+    showFeedback($("add-feedback"), summarizeAddResult(result), true);
+    input.focus();
+  } else {
+    addDialog.close();
+    showFeedback(feedback, summarizeAddResult(result));
+  }
 });
 
 listEl.addEventListener("click", (event) => {
+  if (swallowClick) { swallowClick = false; return; }
+  const rowNumber = event.target.closest(".entry-number") && event.target.closest("li").dataset.number;
+  if (rowNumber && selected.size) { toggleSelected(rowNumber); return; }
   const number = event.target.closest(".row-delete")?.dataset.number;
   if (!number) return;
   openRow = null;
@@ -238,12 +349,11 @@ listEl.addEventListener("click", (event) => {
   renderWatchlist();
 });
 
-twoTapButton($("clear-all"), "Yakin? Tekan lagi", () => {
-  const count = watchlist.length;
-  watchlist = [];
-  saveWatchlist();
-  renderWatchlist();
-  showFeedback(feedback, `${count} nomor dihapus.`);
+twoTapButton($("reset-count"), "Yakin? Tekan lagi", () => {
+  counted.clear();
+  saveList(COUNTED_KEY, []);
+  renderCount();
+  $("scan-feedback").textContent = "Hitungan kembali ke 0.";
 });
 
 // --- log view ----------------------------------------------------------------
@@ -296,7 +406,7 @@ async function copyText(text) {
 }
 
 $("copy-log").addEventListener("click", async () => {
-  const ok = await copyText(formatLogText(scanLog));
+  const ok = await copyText(formatLogText(scanLog, counted.size));
   showFeedback($("log-feedback"), ok
     ? `${scanLog.length} baris disalin. Tempel di WhatsApp.`
     : "Gagal menyalin. Tekan lama pada daftar lalu salin manual.", !ok);
@@ -322,7 +432,6 @@ function showView(name) {
     else b.removeAttribute("aria-current");
   });
   window.scrollTo(0, 0);
-  if (name === "daftar") input.focus({ preventScroll: true }); // ready to paste any time
 }
 navButtons.forEach((b) => b.addEventListener("click", () => showView(b.dataset.nav)));
 
@@ -475,6 +584,7 @@ function onFrame(values, now) {
 function handleNumber(number, ms) {
   const match = matchTag(number, watchlist);
   addLog(number, match);
+  countTag(number);
   beep();
   showRead(number, ms, match.near);
   if (match.result === "full") openResult(number, match);
@@ -538,5 +648,4 @@ if ("serviceWorker" in navigator) {
 
 renderWatchlist();
 renderLog();
-input.focus({ preventScroll: true });
 $("app-version").textContent = `BCTS ${APP_VERSION}`;

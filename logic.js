@@ -150,9 +150,9 @@ export function formatLogLine(entry) {
   return `${formatLogTime(entry.time)}  ${formatTagNumber(entry.number)}${label ? `  ${label}` : ""}`;
 }
 
-// Oldest first, ready to paste into WhatsApp.
-export function formatLogText(entries) {
-  return ["Log scan bagasi", ...entries.map(formatLogLine)].join("\n");
+// Oldest first, ready to paste into WhatsApp. scannedCount: unique tags in the current count.
+export function formatLogText(entries, scannedCount) {
+  return ["Log scan bagasi", `Jumlah tag discan: ${scannedCount}`, ...entries.map(formatLogLine)].join("\n");
 }
 
 // "0657123456" -> "0 657 123456"; other lengths stay as-is.

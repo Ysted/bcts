@@ -39,19 +39,52 @@ button:disabled { opacity: 0.4; }
 button.primary { background: var(--text); color: #fff; border-color: var(--text); width: 100%; font-weight: 600; }
 button.confirming { border-color: var(--warn); color: var(--warn); }
 
+.input-wrap { position: relative; }
 .add-form input {
   width: 100%;
   min-height: var(--touch);
   font: inherit;
   font-size: 1.2rem;
-  padding: 0 14px;
+  padding: 0 96px 0 14px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--surface);
   color: var(--text);
 }
 .add-form { display: grid; gap: 12px; }
-.add-row { display: grid; grid-template-columns: 1fr 2.2fr; gap: 12px; }
+/* Paste floats inside the field, same inset on top, right and bottom */
+#paste {
+  position: absolute; top: 6px; right: 6px; bottom: 6px; min-height: 0;
+  padding: 0 14px; border-radius: 8px; font-size: 0.9rem; background: var(--bg);
+}
+
+/* Daftar: form stays put, only the list scrolls */
+#view-daftar:not([hidden]) {
+  display: flex; flex-direction: column;
+  height: calc(100vh - var(--touch) - 56px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  height: calc(100dvh - var(--touch) - 56px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+}
+#view-daftar .watchlist { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-bottom: 88px; }
+#view-daftar .feedback:empty { display: none; }
+
+/* round + floating centred just above the bottom nav */
+.fab {
+  position: fixed; z-index: 6; left: 50%; transform: translateX(-50%);
+  bottom: calc(var(--touch) + 32px + env(safe-area-inset-bottom, 0px));
+  width: 64px; height: 64px; min-height: 0; padding: 0; border-radius: 50%; border: none;
+  background: var(--text); color: #fff; font-size: 2.2rem; line-height: 1;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+}
+
+.add-dialog {
+  width: min(560px, calc(100% - 32px)); margin: 12vh auto auto; padding: 16px;
+  border: none; border-radius: 16px; background: var(--surface); color: var(--text);
+}
+.add-dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
+.add-dialog .feedback { margin: 0; }
+.add-dialog .feedback:empty { display: none; }
+.scanned-total { font-size: 1.1rem; }
+.scanned-total .num { font-size: 2.4rem; font-weight: 800; }
 .feedback { min-height: 1.5em; margin: 12px 0 0; color: var(--muted); }
 .feedback.warning { color: var(--warn); }
 .error { color: var(--warn); }
@@ -60,6 +93,8 @@ button.confirming { border-color: var(--warn); color: var(--warn); }
 .rows { list-style: none; margin: 24px 0 0; padding: 0; border-top: 1px solid var(--line); }
 .list-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 24px; color: var(--muted); }
 .list-head button { font-size: 0.9rem; padding: 0 14px; }
+.list-actions { display: flex; gap: 8px; }
+#select-action.danger { background: #dc2626; border-color: #dc2626; color: #fff; font-weight: 600; }
 .list-head + .rows { margin-top: 8px; }
 /* iOS-style row: swipe left to reveal Hapus */
 .watchlist li { position: relative; overflow: hidden; border-bottom: 1px solid var(--line); }
@@ -73,6 +108,14 @@ button.confirming { border-color: var(--warn); color: var(--warn); }
   touch-action: pan-y; transition: transform 0.2s ease-out;
 }
 .entry-number.dragging { transition: none; }
+.watchlist li { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.watchlist li.selected .entry-number { background: #dbeafe; }
+.watchlist.selecting .entry-number { padding-left: 40px; }
+.watchlist.selecting .entry-number::before {
+  content: ""; position: absolute; left: 6px; top: 50%; width: 22px; height: 22px; margin-top: -11px;
+  border: 2px solid var(--muted); border-radius: 50%;
+}
+.watchlist li.selected .entry-number::before { background: #2563eb; border-color: #2563eb; box-shadow: inset 0 0 0 3px #dbeafe; }
 .entry-kind { display: block; font-size: 0.85rem; font-weight: 400; color: var(--muted); }
 .watchlist li.found .entry-digits { color: var(--found); text-decoration: line-through; }
 .watchlist li.found .entry-kind { color: var(--found); }
