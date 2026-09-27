@@ -16,6 +16,8 @@
   -webkit-text-size-adjust: 100%;
 }
 * { box-sizing: border-box; }
+/* horizontal swipes belong to the app (page switching, row actions) */
+html, body { touch-action: pan-y; }
 body { margin: 0; background: var(--bg); padding-bottom: calc(var(--touch) + 24px + env(safe-area-inset-bottom, 0px)); }
 main { max-width: 640px; margin: 0 auto; padding: calc(16px + env(safe-area-inset-top, 0px)) 16px 16px; }
 h1 { font-size: 1.4rem; margin: 8px 0 16px; }
@@ -37,7 +39,6 @@ button {
 }
 button:disabled { opacity: 0.4; }
 button.primary { background: var(--text); color: #fff; border-color: var(--text); width: 100%; font-weight: 600; }
-button.confirming { border-color: var(--warn); color: var(--warn); }
 
 .input-wrap { position: relative; }
 .add-form input {
@@ -45,7 +46,7 @@ button.confirming { border-color: var(--warn); color: var(--warn); }
   min-height: var(--touch);
   font: inherit;
   font-size: 1.2rem;
-  padding: 0 96px 0 14px;
+  padding: 0 54px 0 12px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--surface);
@@ -53,10 +54,12 @@ button.confirming { border-color: var(--warn); color: var(--warn); }
 }
 .add-form { display: grid; gap: 12px; }
 /* Paste floats inside the field, same inset on top, right and bottom */
+.add-form input::placeholder { font-size: 0.9rem; }
 #paste {
-  position: absolute; top: 6px; right: 6px; bottom: 6px; min-height: 0;
-  padding: 0 14px; border-radius: 8px; font-size: 0.9rem; background: var(--bg);
+  position: absolute; top: 6px; right: 6px; bottom: 6px; min-height: 0; width: 44px;
+  display: grid; place-items: center; padding: 0; border-radius: 8px; background: var(--bg); color: var(--text);
 }
+#paste svg { display: block; }
 
 /* Daftar: form stays put, only the list scrolls */
 #view-daftar:not([hidden]) {
@@ -78,14 +81,21 @@ button.confirming { border-color: var(--warn); color: var(--warn); }
 }
 
 .add-dialog {
-  width: min(560px, calc(100% - 32px)); margin: 12vh auto auto; padding: 16px;
+  width: min(560px, calc(100% - 16px)); margin: 12vh auto auto; padding: 12px;
   border: none; border-radius: 16px; background: var(--surface); color: var(--text);
 }
 .add-dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
 .add-dialog .feedback { margin: 0; }
 .add-dialog .feedback:empty { display: none; }
-.scanned-total { font-size: 1.1rem; }
-.scanned-total .num { font-size: 2.4rem; font-weight: 800; }
+.confirm-dialog {
+  width: min(340px, calc(100% - 48px)); padding: 20px 20px 12px; border: none; border-radius: 16px;
+  background: var(--surface); color: var(--text); text-align: center;
+}
+.confirm-dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
+.confirm-dialog p { margin: 0 0 12px; font-size: 1.05rem; font-weight: 600; }
+.confirm-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.confirm-actions button { border: none; background: none; color: #2563eb; font-weight: 500; }
+.confirm-actions button.danger { color: #dc2626; font-weight: 700; }
 .feedback { min-height: 1.5em; margin: 12px 0 0; color: var(--muted); }
 .feedback.warning { color: var(--warn); }
 .error { color: var(--warn); }
@@ -147,16 +157,23 @@ nav button { border: none; background: none; color: var(--muted); }
 nav button[aria-current="page"] { color: var(--text); font-weight: 700; background: var(--bg); }
 
 /* live scanner: camera is the one dominant thing */
-.scanner { position: fixed; inset: 0; z-index: 10; background: #000; color: #fff; overflow: hidden; }
+/* sits between the top of the screen and the bottom nav, so the nav stays usable */
+.scanner {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 4;
+  bottom: calc(var(--touch) + 16px + env(safe-area-inset-bottom, 0px));
+  background: #000; color: #fff; overflow: hidden;
+}
 .scanner video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .scan-layer {
   position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; gap: 16px;
-  padding: calc(16px + env(safe-area-inset-top, 0px)) 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  padding: calc(16px + env(safe-area-inset-top, 0px)) 16px 16px;
 }
 .scan-count {
-  align-self: stretch; margin: 0; padding: 8px 12px; border-radius: 10px;
-  background: rgba(0, 0, 0, 0.6); font-size: 0.95rem;
+  position: relative; z-index: 1; align-self: stretch; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 0 4px 0 12px; border-radius: 10px; background: rgba(0, 0, 0, 0.6); font-size: 0.95rem;
 }
+.scan-count strong { font-size: 1.2rem; }
+.scan-count button { min-height: 44px; border: none; background: none; color: #93c5fd; padding: 0 8px; font-size: 0.9rem; }
 /* ITF on a bag tag is long and short: a wide 3:1 window, clear of the thumb zone */
 .scan-guide {
   width: 84%; aspect-ratio: 3 / 1; margin-top: 14vh; flex: none;
@@ -173,7 +190,7 @@ nav button[aria-current="page"] { color: var(--text); font-weight: 700; backgrou
 .scan-number .same { color: #4ade80; }
 .scan-number .diff { color: #f87171; }
 .scan-ms { margin: 2px 0 0; font-size: 0.8rem; opacity: 0.75; min-height: 1.2em; }
-.scan-controls { margin-top: auto; align-self: stretch; display: flex; gap: 12px; }
+.scan-controls { margin-top: auto; align-self: stretch; display: flex; gap: 12px; position: relative; }
 .scan-controls button { flex: 1; background: rgba(255, 255, 255, 0.95); color: #111827; border: none; font-weight: 600; }
 .scan-controls button[aria-pressed="true"] { background: #fde68a; }
 .scan-flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }

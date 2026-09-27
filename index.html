@@ -32,18 +32,7 @@
     </button>
   </section>
 
-  <section id="view-scan" data-view="scan" hidden>
-    <h1>Scan</h1>
-    <p id="scan-summary"></p>
-    <p class="scanned-total"><span class="num" id="scanned-total">0</span> tag discan</p>
-    <div class="stack">
-      <button type="button" class="primary" id="start-scan">Mulai scan</button>
-      <button type="button" id="reset-count">Mulai hitungan baru</button>
-    </div>
-    <p class="feedback" id="scan-feedback" role="status" aria-live="polite"></p>
-    <p class="error" id="scan-error" role="alert"></p>
-    <p class="muted small"><span id="app-version"></span> <span id="engine-info"></span></p>
-  </section>
+  <section id="view-scan" data-view="scan" hidden></section>
 
   <section id="view-log" data-view="log" hidden>
     <h1>Log</h1>
@@ -54,6 +43,7 @@
       <button type="button" id="clear-log">Hapus log</button>
     </div>
     <p class="feedback" id="log-feedback" role="status" aria-live="polite"></p>
+    <p class="muted small"><span id="app-version"></span> <span id="engine-info"></span></p>
   </section>
 </main>
 
@@ -66,7 +56,10 @@
 <div class="scanner" id="scanner" hidden>
   <video id="video" playsinline muted autoplay></video>
   <div class="scan-layer">
-    <p class="scan-count" id="scan-count"></p>
+    <div class="scan-count">
+      <span id="scan-count"></span>
+      <button type="button" id="reset-count">Hitung ulang</button>
+    </div>
     <div class="scan-guide"></div>
     <div class="scan-result" id="scan-result" aria-live="polite">
       <p class="scan-number num" id="scan-number"></p>
@@ -74,7 +67,7 @@
     </div>
     <div class="scan-controls">
       <button type="button" id="torch" aria-pressed="false" hidden>Senter</button>
-      <button type="button" id="stop-scan">Berhenti scan</button>
+      <button type="button" id="scan-retry" hidden>Coba lagi</button>
     </div>
   </div>
   <div class="scan-flash" id="scan-flash"></div>
@@ -95,11 +88,19 @@
     <div class="input-wrap">
       <input id="bulk-input" type="text" inputmode="numeric" autocomplete="off" enterkeyhint="done"
         placeholder="Nomor bagasi yang akan dicari" aria-label="Nomor bagasi yang akan dicari">
-      <button type="button" id="paste">Paste</button>
+      <button type="button" id="paste" aria-label="Paste"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M9 4h6v3H9zM8 5.5H6.5A1.5 1.5 0 0 0 5 7v12.5A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V7a1.5 1.5 0 0 0-1.5-1.5H16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></button>
     </div>
     <p class="feedback warning" id="add-feedback" role="status" aria-live="polite"></p>
     <button type="submit" class="primary">Tambah ke daftar</button>
   </form>
+</dialog>
+
+<dialog class="confirm-dialog" id="confirm-dialog" aria-labelledby="confirm-text">
+  <p id="confirm-text"></p>
+  <div class="confirm-actions">
+    <button type="button" id="confirm-cancel">Batal</button>
+    <button type="button" class="danger" id="confirm-ok">Hapus</button>
+  </div>
 </dialog>
 
 <script type="module" src="app.js"></script>

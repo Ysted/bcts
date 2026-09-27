@@ -131,8 +131,9 @@ async function scanScenario(videoFile, watchlistText, expect, label) {
     // Same bag stays in view the whole time: logged exactly once.
     const logAfter = await page.evaluate(() => JSON.parse(localStorage.getItem("bcts.log")));
     assert.equal(logAfter.length, 1, `${label}: same tag logged ${logAfter.length}x`);
-    await page.click("#stop-scan");
+    await page.click('nav button[data-nav="log"]'); // nav stays usable over the camera
     assert.equal(await isShown(page, "#scanner"), false);
+    assert.equal(await page.$eval("#video", (v) => v.srcObject), null, `${label}: camera off after leaving Scan`);
     assert.deepEqual(errors.filter((e) => !e.includes("favicon")), [], `${label}: page errors`);
     console.log(`✔ ${label}: ${expect} in ${ms} ms, ${readMs} (${engine})`);
   } finally {
@@ -264,14 +265,15 @@ try {
       await page.goto(URL_BASE, { waitUntil: "networkidle0" });
       await page.click('nav button[data-nav="scan"]');
       await new Promise((r) => setTimeout(r, 200));
-      await page.click("#stop-scan");
+      await page.click('nav button[data-nav="daftar"]');
       await new Promise((r) => setTimeout(r, 2500));
       assert.equal(await isShown(page, "#scanner"), false, "scanner stays closed");
       assert.equal(await page.$eval("#video", (v) => v.srcObject), null, "camera released");
-      // And a normal start afterwards still works.
-      await page.click("#start-scan");
+      // And coming back to Scan opens it again.
+      await page.click('nav button[data-nav="scan"]');
       await page.waitForFunction(() => document.getElementById("video").srcObject, { timeout: 10000 });
-      console.log("✔ berhenti saat kamera masih dibuka");
+      assert.equal(await page.$$eval("#start-scan, #stop-scan", (b) => b.length), 0, "no start/stop buttons");
+      console.log("✔ pindah halaman saat kamera masih dibuka");
     } finally {
       await browser.close();
     }
@@ -286,8 +288,7 @@ try {
     const wl = await page.evaluate(() => JSON.parse(localStorage.getItem("bcts.watchlist")));
     assert.equal(wl.find((e) => e.number === "0126123456").found, true, "marked found from result");
     assert.ok((await page.$eval("#scan-count", (e) => e.textContent)).includes("1 ketemu"), "counter");
-    await page.click("#stop-scan");
-    assert.equal(await page.$eval("#scanned-total", (e) => e.textContent), "1", "scanned total");
+    assert.equal(await page.$eval("#scan-count strong", (e) => e.textContent), "1", "scanned total");
 
     // Service worker ready → offline reload must still work, including ZXing.
     await page.evaluate(() => navigator.serviceWorker.ready);
@@ -303,13 +304,16 @@ try {
 
     await page.waitForSelector("#result:not([hidden])"); // same tag, already found: still alarms
     await page.click("#result-continue");
-    await page.click("#stop-scan"); // the camera covers the nav while it runs
-    assert.equal(await isShown(page, "#scanner"), false, "camera off");
     // Same tag again after reload: still counted once.
-    assert.equal(await page.$eval("#scanned-total", (e) => e.textContent), "1", "count survives reload, no double count");
+    assert.equal(await page.$eval("#scan-count strong", (e) => e.textContent), "1", "count survives reload, no double count");
     await page.click("#reset-count");
+    assert.equal(await page.$eval("#confirm-dialog", (d) => d.open), true, "reset asks in a modal");
+    await page.screenshot({ path: `${OUT}konfirmasi-hitung.png` });
+    await page.click("#confirm-cancel");
+    assert.equal(await page.$eval("#scan-count strong", (e) => e.textContent), "1", "cancel keeps count");
     await page.click("#reset-count");
-    assert.equal(await page.$eval("#scanned-total", (e) => e.textContent), "0", "reset count");
+    await page.click("#confirm-ok");
+    assert.equal(await page.$eval("#scan-count strong", (e) => e.textContent), "0", "reset count");
     await page.click('nav button[data-nav="log"]');
     await page.screenshot({ path: `${OUT}log.png` });
     const metas = await page.$$eval("#log-list li .log-meta", (m) => m.map((x) => x.textContent));
@@ -384,6 +388,20 @@ try {
       assert.equal(Math.round(inBox.right - pBox.right), Math.round(pBox.top - inBox.top), "paste inset symmetric");
       await page.keyboard.press("Escape");
 
+      await page.setViewport({ width: 360, height: 780, isMobile: true, hasTouch: false });
+      await page.click("#add-open");
+      const fits = await page.$eval("#bulk-input", (inp) => {
+        const cs = getComputedStyle(inp, "::placeholder");
+        const ctx = document.createElement("canvas").getContext("2d");
+        ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+        const room = inp.clientWidth - parseFloat(getComputedStyle(inp).paddingLeft) - parseFloat(getComputedStyle(inp).paddingRight);
+        return { text: ctx.measureText(inp.placeholder).width, room };
+      });
+      assert.ok(fits.text <= fits.room, `placeholder ${fits.text}px > ${fits.room}px`);
+      await page.screenshot({ path: `${OUT}modal-360.png` });
+      await page.keyboard.press("Escape");
+      await page.setViewport({ width: 400, height: 860, isMobile: true, hasTouch: false });
+
       // Hold a row to select it; tap another to add it; Batal clears.
       const action = () => page.$eval("#select-action", (e) => e.textContent);
       assert.equal(await action(), "Pilih semua");
@@ -410,8 +428,13 @@ try {
       // Hold one, delete it with confirmation.
       await hold(1);
       await page.click("#select-action");
-      assert.equal((await numbers()).length, 2, "first tap only asks");
+      assert.equal(await page.$eval("#confirm-dialog", (d) => d.open), true, "delete asks in a modal");
+      assert.equal(await page.$eval("#confirm-text", (e) => e.textContent), "Hapus 1 nomor dari daftar?");
+      await page.screenshot({ path: `${OUT}konfirmasi-hapus.png` });
+      await page.click("#confirm-cancel");
+      assert.equal((await numbers()).length, 2, "cancel keeps rows");
       await page.click("#select-action");
+      await page.click("#confirm-ok");
       assert.deepEqual(await numbers(), ["0126123456"], "deleted selected");
 
       // Only the list scrolls: fill it, scroll it, the form must not move.
@@ -432,9 +455,44 @@ try {
       assert.equal(await action(), "Hapus (31)");
       await page.screenshot({ path: `${OUT}daftar-pilih.png` });
       await page.click("#select-action");
-      await page.click("#select-action");
+      await page.click("#confirm-ok");
       assert.deepEqual(await numbers(), [], "all deleted");
       console.log("✔ daftar: fokus, hanya angka, tempel banyak baris, geser hapus, tahan untuk pilih, pilih semua, hanya daftar yang scroll");
+    } finally {
+      await browser.close();
+    }
+  }
+
+  // Swipe to change page (touch).
+  {
+    const browser = await launch(videos.none);
+    try {
+      const page = await browser.newPage();
+      await page.setViewport({ width: 400, height: 860, isMobile: true, hasTouch: true });
+      await page.goto(URL_BASE, { waitUntil: "networkidle0" });
+      await page.evaluate(() => { localStorage.clear(); localStorage.setItem("bcts.watchlist", JSON.stringify([{ number: "0126123456", found: false }])); });
+      await page.reload({ waitUntil: "networkidle0" });
+      const swipe = async (x0, x1, y) => {
+        await page.touchscreen.touchStart(x0, y);
+        for (let i = 1; i <= 6; i++) await page.touchscreen.touchMove(x0 + ((x1 - x0) * i) / 6, y);
+        await page.touchscreen.touchEnd();
+        await new Promise((r) => setTimeout(r, 300));
+      };
+      const view = () => page.$eval("nav button[aria-current]", (b) => b.dataset.nav);
+      const row = await (await page.$("#watchlist .entry-number")).boundingBox();
+      await swipe(360, 200, row.y + row.height / 2); // on a row: row action, page stays
+      assert.equal(await view(), "daftar", "row swipe keeps page");
+      await swipe(360, 120, 600); // empty area below the list
+      assert.equal(await view(), "scan", "swipe left → Scan");
+      await page.waitForFunction(() => document.getElementById("video").srcObject, { timeout: 10000 });
+      await swipe(360, 120, 400); // over the camera
+      assert.equal(await view(), "log", "swipe left → Log");
+      assert.equal(await page.$eval("#video", (v) => v.srcObject), null, "camera off on Log");
+      await swipe(60, 300, 400);
+      assert.equal(await view(), "scan", "swipe right → Scan");
+      await swipe(60, 300, 400);
+      assert.equal(await view(), "daftar", "swipe right → Daftar");
+      console.log("✔ geser untuk pindah halaman; geser di baris tidak pindah halaman");
     } finally {
       await browser.close();
     }

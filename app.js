@@ -5,12 +5,11 @@ import {
 import { createDetector, openCamera, startScanLoop, cameraErrorMessage } from "./scanner.js";
 import { unlockAudio, alarmFull, beep, stopVibration } from "./alarm.js";
 
-const APP_VERSION = "v6"; // keep in step with CACHE in sw.js
+const APP_VERSION = "v7"; // keep in step with CACHE in sw.js
 const WATCHLIST_KEY = "bcts.watchlist";
 const LOG_KEY = "bcts.log";
 const COUNTED_KEY = "bcts.counted"; // unique tags scanned since "Mulai hitungan baru"
 const LOG_LIMIT = 500;
-const CONFIRM_MS = 3000;
 const ALARM_REPEAT_MS = 2500;
 const ALARM_REPEATS = 3;
 const AFTER_DISMISS_QUIET_MS = 10000;
@@ -56,27 +55,26 @@ function el(tag, className, text) {
   return node;
 }
 
-// Two taps within a few seconds; the viewer shows no browser dialogs anyway.
-function twoTapButton(button, confirmLabel, onConfirm) {
-  const label = button.textContent;
-  let timer = null;
-  const reset = () => {
-    clearTimeout(timer);
-    timer = null;
-    button.textContent = label;
-    button.classList.remove("confirming");
-  };
-  button.addEventListener("click", () => {
-    if (!timer) {
-      button.textContent = confirmLabel;
-      button.classList.add("confirming");
-      timer = setTimeout(reset, CONFIRM_MS);
-      return;
-    }
-    reset();
-    onConfirm();
-  });
+// In-page confirmation modal (no browser alert). Resolves true only on the red button.
+const confirmDialog = $("confirm-dialog");
+let confirmResolve = null;
+
+function confirmAction(text, okLabel = "Hapus") {
+  $("confirm-text").textContent = text;
+  $("confirm-ok").textContent = okLabel;
+  confirmDialog.showModal();
+  return new Promise((resolve) => { confirmResolve = resolve; });
 }
+
+function settleConfirm(ok) {
+  confirmDialog.close();
+  confirmResolve?.(ok);
+  confirmResolve = null;
+}
+$("confirm-ok").addEventListener("click", () => settleConfirm(true));
+$("confirm-cancel").addEventListener("click", () => settleConfirm(false));
+confirmDialog.addEventListener("cancel", () => settleConfirm(false)); // back button / Esc
+confirmDialog.addEventListener("click", (event) => { if (event.target === confirmDialog) settleConfirm(false); });
 
 function showFeedback(target, text, isWarning) {
   target.textContent = [text, storageFailed ? STORAGE_WARNING : ""].filter(Boolean).join(" ");
@@ -109,10 +107,7 @@ function renderWatchlist() {
     ? `${selected.size} dipilih`
     : `${watchlist.length} nomor · ${foundCount} sudah ketemu`;
   $("select-cancel").hidden = !selecting;
-  resetDeleteConfirm();
-  $("scan-summary").textContent = hasEntries
-    ? `${watchlist.length - foundCount} nomor masih dicari, ${foundCount} sudah ketemu.`
-    : "Daftar masih kosong. Isi dulu nomor yang dicari di tab Daftar.";
+  updateSelectButton();
   renderCount();
 }
 
@@ -123,7 +118,6 @@ function renderCount() {
   scanCount.append(watchlist.length
     ? ` · ${watchlist.length - foundCount} dicari · ${foundCount} ketemu`
     : " · daftar kosong");
-  $("scanned-total").textContent = counted.size;
 }
 
 function countTag(number) {
@@ -159,11 +153,7 @@ const LONG_PRESS_MS = 500;
 const selected = new Set();
 let pressTimer = null;
 let swallowClick = false;
-let deleteConfirmTimer = null;
-
-function resetDeleteConfirm() {
-  clearTimeout(deleteConfirmTimer);
-  deleteConfirmTimer = null;
+function updateSelectButton() {
   const button = $("select-action");
   button.textContent = selected.size ? `Hapus (${selected.size})` : "Pilih semua";
   button.classList.toggle("danger", selected.size > 0);
@@ -175,15 +165,12 @@ function toggleSelected(number) {
   renderWatchlist();
 }
 
-$("select-action").addEventListener("click", () => {
+$("select-action").addEventListener("click", async () => {
   if (!selected.size) {
     closeOpenRow();
     watchlist.forEach((e) => selected.add(e.number));
     renderWatchlist();
-  } else if (!deleteConfirmTimer) {
-    $("select-action").textContent = `Yakin hapus ${selected.size}? Tekan lagi`;
-    deleteConfirmTimer = setTimeout(resetDeleteConfirm, CONFIRM_MS);
-  } else {
+  } else if (await confirmAction(`Hapus ${selected.size} nomor dari daftar?`)) {
     const count = selected.size;
     watchlist = watchlist.filter((e) => !selected.has(e.number));
     selected.clear();
@@ -351,11 +338,11 @@ listEl.addEventListener("click", (event) => {
   renderWatchlist();
 });
 
-twoTapButton($("reset-count"), "Yakin? Tekan lagi", () => {
+$("reset-count").addEventListener("click", async () => {
+  if (!await confirmAction(`Mulai hitungan baru? ${counted.size} tag yang sudah discan kembali ke 0.`, "Mulai baru")) return;
   counted.clear();
   saveList(COUNTED_KEY, []);
   renderCount();
-  $("scan-feedback").textContent = "Hitungan kembali ke 0.";
 });
 
 // --- log view ----------------------------------------------------------------
@@ -414,7 +401,8 @@ $("copy-log").addEventListener("click", async () => {
     : "Gagal menyalin. Tekan lama pada daftar lalu salin manual.", !ok);
 });
 
-twoTapButton($("clear-log"), "Tekan lagi untuk hapus log", () => {
+$("clear-log").addEventListener("click", async () => {
+  if (!await confirmAction(`Hapus semua ${scanLog.length} baris log?`)) return;
   scanLog = [];
   saveLog();
   renderLog();
@@ -424,9 +412,15 @@ twoTapButton($("clear-log"), "Tekan lagi untuk hapus log", () => {
 // --- navigation --------------------------------------------------------------
 
 const navButtons = document.querySelectorAll("nav button[data-nav]");
+const scanner = $("scanner");
+
+const VIEWS = ["daftar", "scan", "log"];
+let currentView = "daftar";
 
 function showView(name) {
-  if (name === "scan") startScan(); // the tap on the tab also unlocks audio
+  currentView = name;
+  scanner.hidden = name !== "scan";
+  if (name === "scan") startScan(); // the tap/swipe that got here also unlocks audio
   else stopScan();
   document.querySelectorAll("section[data-view]").forEach((v) => { v.hidden = v.dataset.view !== name; });
   navButtons.forEach((b) => {
@@ -437,10 +431,32 @@ function showView(name) {
 }
 navButtons.forEach((b) => b.addEventListener("click", () => showView(b.dataset.nav)));
 
+// Swipe left/right anywhere to change page, except where the finger lands on
+// something that owns horizontal swipes itself (a list row) or on an overlay.
+let pageSwipe = null;
+document.addEventListener("touchstart", (event) => {
+  const target = event.target;
+  pageSwipe = event.touches.length === 1 && !target.closest(".watchlist li, dialog, .result, input")
+    ? { x: event.touches[0].clientX, y: event.touches[0].clientY }
+    : null;
+}, { passive: true });
+document.addEventListener("touchend", (event) => {
+  if (!pageSwipe) return;
+  const touch = event.changedTouches[0];
+  const dx = touch.clientX - pageSwipe.x;
+  const dy = touch.clientY - pageSwipe.y;
+  pageSwipe = null;
+  if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+  const next = VIEWS[VIEWS.indexOf(currentView) + (dx < 0 ? 1 : -1)];
+  if (next) showView(next);
+}, { passive: true });
+
+// Any touch on the page keeps audio unlocked (e.g. after returning from background).
+document.addEventListener("pointerdown", unlockAudio, { capture: true, passive: true });
+
 // --- scanning ------------------------------------------------------------------
 
 const video = $("video");
-const scanner = $("scanner");
 const torchButton = $("torch");
 const forceZxing = new URLSearchParams(location.search).get("engine") === "zxing";
 
@@ -514,9 +530,7 @@ async function startScan() {
   starting = true;
   const session = ++scanSession;
   unlockAudio(); // must happen inside this tap or alarms stay silent
-  $("scan-error").textContent = "";
-  $("scan-feedback").textContent = "";
-  scanner.hidden = false;
+  $("scan-retry").hidden = true;
   setHint("Membuka kamera…");
   let opened;
   try {
@@ -526,16 +540,15 @@ async function startScan() {
   } catch (err) {
     starting = false;
     if (session !== scanSession) return;
-    scanner.hidden = true;
-    $("scan-error").textContent = err?.kind
+    setHint(err?.kind
       ? cameraErrorMessage(err)
-      : `Pembaca barcode gagal dimuat (${err?.message || err}). Buka aplikasi sekali saat ada sinyal, lalu coba lagi.`;
+      : `Pembaca barcode gagal dimuat (${err?.message || err}). Buka aplikasi sekali saat ada sinyal, lalu coba lagi.`);
+    $("scan-retry").hidden = false;
     return;
   }
   starting = false;
   if (session !== scanSession || document.hidden) { // stopped or left the app mid-start
     opened.close();
-    scanner.hidden = true;
     return;
   }
   camera = opened;
@@ -547,7 +560,7 @@ async function startScan() {
   resumeLoop();
 }
 
-$("start-scan").addEventListener("click", startScan);
+$("scan-retry").addEventListener("click", startScan);
 
 function stopScan() {
   scanSession++;
@@ -555,10 +568,8 @@ function stopScan() {
   camera?.close();
   camera = null;
   releaseScreen();
-  scanner.hidden = true;
+  torchButton.hidden = true;
 }
-
-$("stop-scan").addEventListener("click", stopScan);
 
 torchButton.addEventListener("click", async () => {
   const on = torchButton.getAttribute("aria-pressed") !== "true";
@@ -638,10 +649,9 @@ $("result-found").addEventListener("click", () => {
 // --- lifecycle -------------------------------------------------------------------
 
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden && camera) {
-    stopScan();
-    $("scan-error").textContent = "Scan berhenti karena aplikasi ditinggal. Tekan Mulai scan lagi.";
-  }
+  // Camera off while the app is in the background, straight back on when it returns to Scan.
+  if (document.hidden) stopScan();
+  else if (currentView === "scan") startScan();
 });
 
 if ("serviceWorker" in navigator) {
