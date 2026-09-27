@@ -132,7 +132,8 @@ async function scanScenario(videoFile, watchlistText, expect, label) {
     const logAfter = await page.evaluate(() => JSON.parse(localStorage.getItem("bcts.log")));
     assert.equal(logAfter.length, 1, `${label}: same tag logged ${logAfter.length}x`);
     await page.click('nav button[data-nav="log"]'); // nav stays usable over the camera
-    assert.equal(await isShown(page, "#scanner"), false);
+    await new Promise((r) => setTimeout(r, 400)); // slide finishes
+    assert.equal(await isShown(page, "#view-scan"), false);
     assert.equal(await page.$eval("#video", (v) => v.srcObject), null, `${label}: camera off after leaving Scan`);
     assert.deepEqual(errors.filter((e) => !e.includes("favicon")), [], `${label}: page errors`);
     console.log(`✔ ${label}: ${expect} in ${ms} ms, ${readMs} (${engine})`);
@@ -267,7 +268,7 @@ try {
       await new Promise((r) => setTimeout(r, 200));
       await page.click('nav button[data-nav="daftar"]');
       await new Promise((r) => setTimeout(r, 2500));
-      assert.equal(await isShown(page, "#scanner"), false, "scanner stays closed");
+      assert.equal(await isShown(page, "#view-scan"), false, "scanner stays closed");
       assert.equal(await page.$eval("#video", (v) => v.srcObject), null, "camera released");
       // And coming back to Scan opens it again.
       await page.click('nav button[data-nav="scan"]');
@@ -482,8 +483,25 @@ try {
       const row = await (await page.$("#watchlist .entry-number")).boundingBox();
       await swipe(360, 200, row.y + row.height / 2); // on a row: row action, page stays
       assert.equal(await view(), "daftar", "row swipe keeps page");
+      // Mid-drag the page follows the finger and the camera page peeks in; a short drag snaps back.
+      await page.touchscreen.touchStart(360, 600);
+      for (let i = 1; i <= 4; i++) await page.touchscreen.touchMove(360 - i * 15, 600);
+      const peek = await page.evaluate(() => ({
+        scanShown: !document.getElementById("view-scan").hidden,
+        daftarX: document.getElementById("view-daftar").getBoundingClientRect().left,
+        scanX: document.getElementById("view-scan").getBoundingClientRect().left,
+      }));
+      assert.ok(peek.scanShown && peek.daftarX < -40 && peek.scanX < 400 && peek.scanX > 300, `follows finger ${JSON.stringify(peek)}`);
+      await new Promise((r) => setTimeout(r, 400)); // slow: not a flick
+      await page.touchscreen.touchEnd();
+      await new Promise((r) => setTimeout(r, 400));
+      assert.equal(await view(), "daftar", "short drag snaps back");
+      assert.equal(await page.$eval("#view-daftar", (e) => Math.round(e.getBoundingClientRect().left)), 0, "back in place");
+      assert.equal(await isShown(page, "#view-scan"), false, "neighbour hidden again");
+
       await swipe(360, 120, 600); // empty area below the list
       assert.equal(await view(), "scan", "swipe left → Scan");
+      await page.screenshot({ path: `${OUT}geser-scan.png` });
       await page.waitForFunction(() => document.getElementById("video").srcObject, { timeout: 10000 });
       await swipe(360, 120, 400); // over the camera
       assert.equal(await view(), "log", "swipe left → Log");

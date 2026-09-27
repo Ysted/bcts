@@ -3,7 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#f3f5f7">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f3f5f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1115" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="BCTS">
@@ -32,7 +34,27 @@
     </button>
   </section>
 
-  <section id="view-scan" data-view="scan" hidden></section>
+  <section id="view-scan" data-view="scan" hidden>
+    <div class="scanner" id="scanner">
+      <video id="video" playsinline muted autoplay></video>
+      <div class="scan-layer">
+        <div class="scan-count">
+          <span id="scan-count"></span>
+          <button type="button" id="reset-count">Hitung ulang</button>
+        </div>
+        <div class="scan-guide"></div>
+        <div class="scan-result" id="scan-result" aria-live="polite">
+          <p class="scan-number num" id="scan-number"></p>
+          <p class="scan-ms num" id="scan-ms"></p>
+        </div>
+        <div class="scan-controls">
+          <button type="button" class="round" id="torch" aria-pressed="false" aria-label="Senter" hidden><svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path d="M7 3h10v3l-2.5 4v10a1 1 0 0 1-1 1h-3a1 1 0 0 1-1-1V10L7 6z M7 6h10 M12 13v2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <button type="button" id="scan-retry" hidden>Coba lagi</button>
+        </div>
+      </div>
+      <div class="scan-flash" id="scan-flash"></div>
+    </div>
+  </section>
 
   <section id="view-log" data-view="log" hidden>
     <h1>Log</h1>
@@ -52,26 +74,6 @@
   <button type="button" data-nav="scan">Scan</button>
   <button type="button" data-nav="log">Log</button>
 </nav>
-
-<div class="scanner" id="scanner" hidden>
-  <video id="video" playsinline muted autoplay></video>
-  <div class="scan-layer">
-    <div class="scan-count">
-      <span id="scan-count"></span>
-      <button type="button" id="reset-count">Hitung ulang</button>
-    </div>
-    <div class="scan-guide"></div>
-    <div class="scan-result" id="scan-result" aria-live="polite">
-      <p class="scan-number num" id="scan-number"></p>
-      <p class="scan-ms num" id="scan-ms"></p>
-    </div>
-    <div class="scan-controls">
-      <button type="button" id="torch" aria-pressed="false" hidden>Senter</button>
-      <button type="button" id="scan-retry" hidden>Coba lagi</button>
-    </div>
-  </div>
-  <div class="scan-flash" id="scan-flash"></div>
-</div>
 
 <div class="result" id="result" role="alertdialog" aria-modal="true" aria-labelledby="result-title" hidden>
   <p class="result-title" id="result-title"></p>

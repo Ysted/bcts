@@ -8,18 +8,52 @@
   --found-bg: #15803d;
   --warn: #b45309;
   --warn-bg: #f59e0b;
+  --primary-bg: #111827;
+  --primary-fg: #ffffff;
+  --link: #2563eb;
+  --danger: #dc2626;
+  --check-off: #c3c9d2;
+  --selected: #2563eb;
   --touch: 56px;
+  color-scheme: light dark;
   font-family: Roboto, -apple-system, "Segoe UI", system-ui, sans-serif;
   font-size: 18px;
   color: var(--text);
   background: var(--bg);
   -webkit-text-size-adjust: 100%;
 }
+/* follows the phone's light/dark setting */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1115;
+    --surface: #1a1d23;
+    --text: #e8eaed;
+    --muted: #9aa3ae;
+    --line: #2c313a;
+    --found: #4ade80;
+    --warn: #fbbf24;
+    --primary-bg: #e8eaed;
+    --primary-fg: #0f1115;
+    --link: #60a5fa;
+    --danger: #f87171;
+    --check-off: #4b5360;
+    --selected: #3b82f6;
+  }
+}
 * { box-sizing: border-box; }
 /* horizontal swipes belong to the app (page switching, row actions) */
 html, body { touch-action: pan-y; }
-body { margin: 0; background: var(--bg); padding-bottom: calc(var(--touch) + 24px + env(safe-area-inset-bottom, 0px)); }
-main { max-width: 640px; margin: 0 auto; padding: calc(16px + env(safe-area-inset-top, 0px)) 16px 16px; }
+body { margin: 0; background: var(--bg); overflow: hidden; }
+/* pager: the three pages sit side by side above the nav and slide with the finger */
+main {
+  position: fixed; top: 0; left: 0; right: 0; overflow: hidden;
+  bottom: calc(var(--touch) + 16px + env(safe-area-inset-bottom, 0px));
+}
+section[data-view] {
+  position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain; background: var(--bg);
+  padding: calc(16px + env(safe-area-inset-top, 0px)) max(16px, calc((100% - 640px) / 2)) 16px;
+}
+#view-scan { padding: 0; overflow: hidden; background: #000; }
 h1 { font-size: 1.4rem; margin: 8px 0 16px; }
 .num { font-variant-numeric: tabular-nums lining-nums; letter-spacing: 0.02em; }
 .muted { color: var(--muted); }
@@ -38,7 +72,7 @@ button {
   touch-action: manipulation;
 }
 button:disabled { opacity: 0.4; }
-button.primary { background: var(--text); color: #fff; border-color: var(--text); width: 100%; font-weight: 600; }
+button.primary { background: var(--primary-bg); color: var(--primary-fg); border-color: var(--primary-bg); width: 100%; font-weight: 600; }
 
 .input-wrap { position: relative; }
 .add-form input {
@@ -62,21 +96,16 @@ button.primary { background: var(--text); color: #fff; border-color: var(--text)
 #paste svg { display: block; }
 
 /* Daftar: form stays put, only the list scrolls */
-#view-daftar:not([hidden]) {
-  display: flex; flex-direction: column;
-  height: calc(100vh - var(--touch) - 56px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
-  height: calc(100dvh - var(--touch) - 56px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
-}
+#view-daftar { display: flex; flex-direction: column; overflow: hidden; }
 #view-daftar .watchlist { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-bottom: 88px; }
 #view-daftar .feedback:empty { display: none; }
 
-/* round + floating centred just above the bottom nav */
+/* round + floating centred just above the bottom nav (moves with its page) */
 .fab svg { display: block; }
 .fab {
-  position: fixed; z-index: 6; left: 50%; transform: translateX(-50%);
-  bottom: calc(var(--touch) + 32px + env(safe-area-inset-bottom, 0px));
+  position: absolute; z-index: 6; left: 50%; transform: translateX(-50%); bottom: 16px;
   width: 64px; height: 64px; min-height: 0; padding: 0; border-radius: 50%; border: none;
-  display: grid; place-items: center; background: var(--text); color: #fff;
+  display: grid; place-items: center; background: var(--primary-bg); color: var(--primary-fg);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
 }
 
@@ -94,8 +123,8 @@ button.primary { background: var(--text); color: #fff; border-color: var(--text)
 .confirm-dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
 .confirm-dialog p { margin: 0 0 12px; font-size: 1.05rem; font-weight: 600; }
 .confirm-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.confirm-actions button { border: none; background: none; color: #2563eb; font-weight: 500; }
-.confirm-actions button.danger { color: #dc2626; font-weight: 700; }
+.confirm-actions button { border: none; background: none; color: var(--link); font-weight: 500; }
+.confirm-actions button.danger { color: var(--danger); font-weight: 700; }
 .feedback { min-height: 1.5em; margin: 12px 0 0; color: var(--muted); }
 .feedback.warning { color: var(--warn); }
 .error { color: var(--warn); }
@@ -104,15 +133,15 @@ button.primary { background: var(--text); color: #fff; border-color: var(--text)
 .rows { list-style: none; margin: 24px 0 0; padding: 0; border-top: 1px solid var(--line); }
 .list-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 24px; color: var(--muted); }
 /* plain text actions, like links */
-.list-head button { border: none; background: none; padding: 0 6px; color: #2563eb; font-size: 1rem; font-weight: 500; }
+.list-head button { border: none; background: none; padding: 0 6px; color: var(--link); font-size: 1rem; font-weight: 500; }
 .list-actions { display: flex; gap: 12px; margin-right: -6px; }
-#select-action.danger { color: #dc2626; font-weight: 600; }
+#select-action.danger { color: var(--danger); font-weight: 600; }
 .list-head + .rows { margin-top: 8px; }
 /* iOS-style row: swipe left to reveal Hapus */
 .watchlist li { position: relative; overflow: hidden; border-bottom: 1px solid var(--line); }
 .row-delete {
   position: absolute; top: 0; right: 0; bottom: 0; width: 96px;
-  border: none; border-radius: 0; background: #dc2626; color: #fff; font-weight: 600;
+  border: none; border-radius: 0; background: #dc2626; color: #fff; font-weight: 600; /* same in both modes */
 }
 .entry-number {
   position: relative; padding: 12px 0; background: var(--bg);
@@ -125,11 +154,11 @@ button.primary { background: var(--text); color: #fff; border-color: var(--text)
 .watchlist.selecting .entry-number { display: flex; align-items: center; gap: 16px; padding-left: 4px; }
 .watchlist.selecting .entry-number::before {
   content: ""; flex: none; width: 26px; height: 26px; box-sizing: border-box;
-  border: 2px solid #c3c9d2; border-radius: 50%;
+  border: 2px solid var(--check-off); border-radius: 50%;
 }
 .watchlist li.selected .entry-number::before {
-  border-color: #2563eb;
-  background: #2563eb url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6 12.5l4 4 8-9' fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 18px no-repeat;
+  border-color: var(--selected);
+  background: var(--selected) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6 12.5l4 4 8-9' fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 18px no-repeat;
 }
 .entry-kind { margin-top: 2px; }
 .entry-kind { display: block; font-size: 0.85rem; font-weight: 400; color: var(--muted); }
@@ -157,12 +186,7 @@ nav button { border: none; background: none; color: var(--muted); }
 nav button[aria-current="page"] { color: var(--text); font-weight: 700; background: var(--bg); }
 
 /* live scanner: camera is the one dominant thing */
-/* sits between the top of the screen and the bottom nav, so the nav stays usable */
-.scanner {
-  position: fixed; top: 0; left: 0; right: 0; z-index: 4;
-  bottom: calc(var(--touch) + 16px + env(safe-area-inset-bottom, 0px));
-  background: #000; color: #fff; overflow: hidden;
-}
+.scanner { position: absolute; inset: 0; background: #000; color: #fff; overflow: hidden; }
 .scanner video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .scan-layer {
   position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; gap: 16px;
@@ -190,9 +214,17 @@ nav button[aria-current="page"] { color: var(--text); font-weight: 700; backgrou
 .scan-number .same { color: #4ade80; }
 .scan-number .diff { color: #f87171; }
 .scan-ms { margin: 2px 0 0; font-size: 0.8rem; opacity: 0.75; min-height: 1.2em; }
-.scan-controls { margin-top: auto; align-self: stretch; display: flex; gap: 12px; position: relative; }
-.scan-controls button { flex: 1; background: rgba(255, 255, 255, 0.95); color: #111827; border: none; font-weight: 600; }
-.scan-controls button[aria-pressed="true"] { background: #fde68a; }
+.scan-controls { margin-top: auto; align-self: stretch; display: flex; justify-content: center; gap: 12px; position: relative; }
+.scan-controls button { background: rgba(255, 255, 255, 0.95); color: #111827; border: none; font-weight: 600; }
+.scan-controls #scan-retry { flex: 1; }
+/* round torch, same shape as the + on Daftar */
+.scan-controls button.round {
+  width: 64px; height: 64px; min-height: 0; padding: 0; border-radius: 50%;
+  display: grid; place-items: center; background: rgba(0, 0, 0, 0.55); color: #fff;
+  border: 1.5px solid rgba(255, 255, 255, 0.6);
+}
+.scan-controls button.round svg { display: block; }
+.scan-controls button.round[aria-pressed="true"] { background: #fde68a; color: #111827; border-color: #fde68a; }
 .scan-flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
 .scan-flash.on { animation: flash 180ms ease-out; }
 @keyframes flash { from { opacity: 0.45; } to { opacity: 0; } }

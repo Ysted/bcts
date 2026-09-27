@@ -1,6 +1,6 @@
 // Cache-first service worker: after one online visit the app runs fully offline.
 // Bump CACHE on every deploy so phones pick up the new files.
-const CACHE = "bcts-v7";
+const CACHE = "bcts-v8";
 const ASSETS = [
   "./",
   "./index.html",

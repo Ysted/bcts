@@ -5,7 +5,7 @@ import {
 import { createDetector, openCamera, startScanLoop, cameraErrorMessage } from "./scanner.js";
 import { unlockAudio, alarmFull, beep, stopVibration } from "./alarm.js";
 
-const APP_VERSION = "v7"; // keep in step with CACHE in sw.js
+const APP_VERSION = "v8"; // keep in step with CACHE in sw.js
 const WATCHLIST_KEY = "bcts.watchlist";
 const LOG_KEY = "bcts.log";
 const COUNTED_KEY = "bcts.counted"; // unique tags scanned since "Mulai hitungan baru"
@@ -412,44 +412,106 @@ $("clear-log").addEventListener("click", async () => {
 // --- navigation --------------------------------------------------------------
 
 const navButtons = document.querySelectorAll("nav button[data-nav]");
-const scanner = $("scanner");
+const main = document.querySelector("main");
 
+// --- pager: pages slide side by side, following the finger ---
 const VIEWS = ["daftar", "scan", "log"];
+const panes = VIEWS.map((v) => document.querySelector(`section[data-view="${v}"]`));
+const SLIDE_MS = 260;
+let pageIndex = 0;
 let currentView = "daftar";
+let settleTimer = null;
 
-function showView(name) {
-  currentView = name;
-  scanner.hidden = name !== "scan";
-  if (name === "scan") startScan(); // the tap/swipe that got here also unlocks audio
-  else stopScan();
-  document.querySelectorAll("section[data-view]").forEach((v) => { v.hidden = v.dataset.view !== name; });
+function placePanes(offsetPx, animate) {
+  for (const [i, pane] of panes.entries()) {
+    pane.style.transition = animate ? `transform ${SLIDE_MS}ms cubic-bezier(0.2, 0.8, 0.2, 1)` : "none";
+    pane.style.transform = `translateX(calc(${(i - pageIndex) * 100}% + ${offsetPx}px))`;
+  }
+}
+
+function revealPanes() {
+  clearTimeout(settleTimer);
+  panes.forEach((pane) => { pane.hidden = false; });
+}
+
+// Slide to page `next` (or back to the current one when the swipe was too short).
+function goToPage(next) {
+  revealPanes();
+  pageIndex = next;
+  currentView = VIEWS[next];
+  void panes[0].offsetWidth; // start the slide from where the finger left the panes
+  placePanes(0, true);
   navButtons.forEach((b) => {
-    if (b.dataset.nav === name) b.setAttribute("aria-current", "page");
+    if (b.dataset.nav === currentView) b.setAttribute("aria-current", "page");
     else b.removeAttribute("aria-current");
   });
-  window.scrollTo(0, 0);
+  if (currentView !== "scan") stopScan();
+  settleTimer = setTimeout(() => {
+    panes.forEach((pane, i) => { pane.hidden = i !== pageIndex; });
+    if (currentView === "scan") startScan(); // camera only once the page has arrived
+  }, SLIDE_MS);
+}
+
+function showView(name) {
+  goToPage(VIEWS.indexOf(name));
 }
 navButtons.forEach((b) => b.addEventListener("click", () => showView(b.dataset.nav)));
+placePanes(0, false);
 
-// Swipe left/right anywhere to change page, except where the finger lands on
-// something that owns horizontal swipes itself (a list row) or on an overlay.
-let pageSwipe = null;
+// Drag anywhere to change page, except where the finger lands on something that
+// owns horizontal swipes itself (a list row) or on an overlay.
+// Follows one finger by its identifier, so a second finger resting on the
+// screen (or a stale touch point) does not block or hijack the swipe.
+let pageDrag = null;
+const dragTouch = (list) => [...list].find((t) => t.identifier === pageDrag?.id);
+
 document.addEventListener("touchstart", (event) => {
-  const target = event.target;
-  pageSwipe = event.touches.length === 1 && !target.closest(".watchlist li, dialog, .result, input")
-    ? { x: event.touches[0].clientX, y: event.touches[0].clientY }
-    : null;
-}, { passive: true });
-document.addEventListener("touchend", (event) => {
-  if (!pageSwipe) return;
+  if (pageDrag) return; // already following a finger
   const touch = event.changedTouches[0];
-  const dx = touch.clientX - pageSwipe.x;
-  const dy = touch.clientY - pageSwipe.y;
-  pageSwipe = null;
-  if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-  const next = VIEWS[VIEWS.indexOf(currentView) + (dx < 0 ? 1 : -1)];
-  if (next) showView(next);
+  if (event.target.closest(".watchlist li, dialog, .result, input, nav")) return;
+  pageDrag = { id: touch.identifier, x: touch.clientX, y: touch.clientY, t: performance.now(), dx: 0, axis: null };
 }, { passive: true });
+
+document.addEventListener("touchmove", (event) => {
+  const touch = dragTouch(event.changedTouches);
+  if (!touch || pageDrag.axis === "y") return;
+  const dx = touch.clientX - pageDrag.x;
+  const dy = touch.clientY - pageDrag.y;
+  if (!pageDrag.axis) {
+    if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) { pageDrag.axis = "y"; return; }
+    if (Math.abs(dx) < 10) return;
+    pageDrag.axis = "x";
+    revealPanes();
+  }
+  const hasNeighbour = VIEWS[pageIndex + (dx < 0 ? 1 : -1)] !== undefined;
+  pageDrag.dx = hasNeighbour ? dx : dx * 0.3; // rubber-band at the first and last page
+  placePanes(pageDrag.dx, false);
+}, { passive: true });
+
+function endPageDrag(event) {
+  const touch = dragTouch(event.changedTouches);
+  if (!touch) return; // some other finger lifted
+  const drag = pageDrag;
+  pageDrag = null;
+  if (drag.axis === "y") return;
+  // While the decoder is busy the browser may coalesce every touchmove away,
+  // so judge the swipe from where the finger lifted, not only from the moves.
+  if (event.type === "touchend") {
+    const dx = touch.clientX - drag.x;
+    const dy = touch.clientY - drag.y;
+    if (!drag.axis && (Math.abs(dx) < 10 || Math.abs(dx) < Math.abs(dy))) return;
+    drag.dx = VIEWS[pageIndex + (dx < 0 ? 1 : -1)] !== undefined ? dx : dx * 0.3;
+  } else if (!drag.axis) {
+    return;
+  }
+  const width = main.clientWidth;
+  const speed = Math.abs(drag.dx) / Math.max(1, performance.now() - drag.t); // px per ms
+  const next = pageIndex + (drag.dx < 0 ? 1 : -1);
+  const far = Math.abs(drag.dx) > width * 0.25 || (speed > 0.4 && Math.abs(drag.dx) > 30);
+  goToPage(far && VIEWS[next] ? next : pageIndex);
+}
+document.addEventListener("touchend", endPageDrag, { passive: true });
+document.addEventListener("touchcancel", endPageDrag, { passive: true });
 
 // Any touch on the page keeps audio unlocked (e.g. after returning from background).
 document.addEventListener("pointerdown", unlockAudio, { capture: true, passive: true });
