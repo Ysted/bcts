@@ -194,7 +194,7 @@ nav button[aria-current="page"] { color: var(--text); font-weight: 700; backgrou
 }
 .scan-count {
   position: relative; z-index: 1; align-self: stretch; display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  padding: 0 4px 0 12px; border-radius: 10px; background: rgba(0, 0, 0, 0.6); font-size: 0.95rem;
+  min-height: 56px; padding: 0 4px 0 12px; border-radius: 10px; background: rgba(0, 0, 0, 0.6); font-size: 0.95rem;
 }
 .scan-count strong { font-size: 1.2rem; }
 .scan-count button { min-height: 44px; border: none; background: none; color: #93c5fd; padding: 0 8px; font-size: 0.9rem; }
@@ -225,14 +225,14 @@ nav button[aria-current="page"] { color: var(--text); font-weight: 700; backgrou
 .scan-controls { margin-top: auto; align-self: stretch; display: flex; justify-content: center; gap: 12px; position: relative; }
 .scan-controls button { background: rgba(255, 255, 255, 0.95); color: #111827; border: none; font-weight: 600; }
 .scan-controls #scan-retry { flex: 1; }
-/* round torch, same shape as the + on Daftar */
-.scan-controls button.round {
-  width: 64px; height: 64px; min-height: 0; padding: 0; border-radius: 50%;
-  display: grid; place-items: center; background: rgba(0, 0, 0, 0.55); color: #fff;
-  border: 1.5px solid rgba(255, 255, 255, 0.6);
+/* round torch in the counter bar, clear of the reads below the guide */
+.scan-actions { display: flex; align-items: center; gap: 4px; }
+.scan-count button.round {
+  width: 48px; height: 48px; min-height: 0; padding: 0; border-radius: 50%;
+  display: grid; place-items: center; color: #fff;
 }
-.scan-controls button.round svg { display: block; }
-.scan-controls button.round[aria-pressed="true"] { background: #fde68a; color: #111827; border-color: #fde68a; }
+.scan-count button.round svg { display: block; }
+.scan-count button.round[aria-pressed="true"] { background: #fde68a; color: #111827; }
 /* over the camera and the dimming around the guide, under the counter and the read number */
 .scan-flash { position: absolute; inset: 0; z-index: 1; background: #fff; opacity: 0; pointer-events: none; }
 .scan-flash.on { animation: flash 1000ms ease-out; }

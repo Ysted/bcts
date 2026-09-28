@@ -41,7 +41,10 @@
       <div class="scan-layer">
         <div class="scan-count">
           <span id="scan-count"></span>
-          <button type="button" id="reset-count">Hitung ulang</button>
+          <span class="scan-actions">
+            <button type="button" id="reset-count">Hitung ulang</button>
+            <button type="button" class="round" id="torch" aria-pressed="false" aria-label="Senter" hidden><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M7 3h10v3l-2.5 4v10a1 1 0 0 1-1 1h-3a1 1 0 0 1-1-1V10L7 6z M7 6h10 M12 13v2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          </span>
         </div>
         <div class="scan-guide"></div>
         <div class="scan-result" id="scan-result" aria-live="polite">
@@ -49,7 +52,6 @@
           <ol class="scan-history" id="scan-history"></ol>
         </div>
         <div class="scan-controls">
-          <button type="button" class="round" id="torch" aria-pressed="false" aria-label="Senter" hidden><svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path d="M7 3h10v3l-2.5 4v10a1 1 0 0 1-1 1h-3a1 1 0 0 1-1-1V10L7 6z M7 6h10 M12 13v2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
           <button type="button" id="scan-retry" hidden>Coba lagi</button>
         </div>
       </div>
