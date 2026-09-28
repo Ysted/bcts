@@ -206,7 +206,7 @@ nav button[aria-current="page"] { color: var(--text); font-weight: 700; backgrou
   pointer-events: none;
 }
 .scan-result {
-  position: relative; width: 84%; text-align: center; padding: 10px 12px; border-radius: 12px;
+  position: relative; z-index: 2; width: 84%; text-align: center; padding: 10px 12px; border-radius: 12px;
   background: rgba(0, 0, 0, 0.6);
 }
 .scan-hint { margin: 0; font-size: 1.05rem; }
@@ -232,9 +232,10 @@ nav button[aria-current="page"] { color: var(--text); font-weight: 700; backgrou
 }
 .scan-controls button.round svg { display: block; }
 .scan-controls button.round[aria-pressed="true"] { background: #fde68a; color: #111827; border-color: #fde68a; }
-.scan-flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
-.scan-flash.on { animation: flash 180ms ease-out; }
-@keyframes flash { from { opacity: 0.45; } to { opacity: 0; } }
+/* over the camera and the dimming around the guide, under the counter and the read number */
+.scan-flash { position: absolute; inset: 0; z-index: 1; background: #fff; opacity: 0; pointer-events: none; }
+.scan-flash.on { animation: flash 450ms ease-out; }
+@keyframes flash { 0%, 25% { opacity: 0.85; } 100% { opacity: 0; } }
 
 /* full-screen result */
 .result {
