@@ -234,8 +234,8 @@ nav button[aria-current="page"] { color: var(--text); font-weight: 700; backgrou
 .scan-controls button.round[aria-pressed="true"] { background: #fde68a; color: #111827; border-color: #fde68a; }
 /* over the camera and the dimming around the guide, under the counter and the read number */
 .scan-flash { position: absolute; inset: 0; z-index: 1; background: #fff; opacity: 0; pointer-events: none; }
-.scan-flash.on { animation: flash 450ms ease-out; }
-@keyframes flash { 0%, 25% { opacity: 0.85; } 100% { opacity: 0; } }
+.scan-flash.on { animation: flash 5400ms ease-out; }
+@keyframes flash { 0%, 40% { opacity: 0.85; } 100% { opacity: 0; } }
 
 /* full-screen result */
 .result {

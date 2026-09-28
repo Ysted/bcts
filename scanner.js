@@ -11,9 +11,8 @@ const CAMERA_FPS = 30;
 // Tags are read from 20-30 cm, where phone cameras focus well, and still fill the box.
 const ZOOM = 1.5;
 const MAX_SIDE = 1280; // downscale big frames (a camera that ignores the 720p request)
-// Only a band of the frame is decoded: full width, centred on the (square) guide
-// box, BAND x its size tall, i.e. the box plus a quarter of it above and below.
-const BAND = 1.5;
+// Only the part of the frame under the guide box is decoded; a tag outside the
+// box is never read.
 
 export async function createDetector({ forceZxing = false } = {}) {
   if (!forceZxing && "BarcodeDetector" in window) {
@@ -171,27 +170,27 @@ const IDLE_GAP_MS = 100; // ~10 decodes/s while searching
 const frameCanvas = document.createElement("canvas");
 const frameCtx = frameCanvas.getContext("2d", { willReadFrequently: true });
 
-// The guide band of the current frame, drawn into frameCanvas. null if no frame yet.
-function grabBand(video, guide) {
+// The part of the current frame under the guide box, drawn into frameCanvas.
+// null if there is no frame yet or the box does not cover the picture.
+function grabGuideArea(video, guide) {
   const w = video.videoWidth;
   const h = video.videoHeight;
   if (!w || !h) return null;
-  let y0 = 0;
-  let y1 = h;
   const v = video.getBoundingClientRect();
   const g = guide.getBoundingClientRect();
-  if (g.height && v.height) {
-    const scale = Math.max(v.width / w, v.height / h); // object-fit: cover
-    const centre = (g.top + g.height / 2 - v.top - (v.height - h * scale) / 2) / scale;
-    const half = (g.width * BAND) / 2 / scale;
-    y0 = Math.max(0, Math.round(centre - half));
-    y1 = Math.min(h, Math.round(centre + half));
-    if (y1 - y0 < 16) { y0 = 0; y1 = h; } // guide off the picture: decode it all
-  }
-  const scale = Math.min(1, MAX_SIDE / Math.max(w, y1 - y0));
-  frameCanvas.width = Math.round(w * scale);
-  frameCanvas.height = Math.round((y1 - y0) * scale);
-  frameCtx.drawImage(video, 0, y0, w, y1 - y0, 0, 0, frameCanvas.width, frameCanvas.height);
+  if (!g.width || !g.height || !v.width || !v.height) return null;
+  const scale = Math.max(v.width / w, v.height / h); // object-fit: cover
+  const offX = v.left + (v.width - w * scale) / 2;
+  const offY = v.top + (v.height - h * scale) / 2;
+  const x0 = Math.max(0, Math.round((g.left - offX) / scale));
+  const y0 = Math.max(0, Math.round((g.top - offY) / scale));
+  const x1 = Math.min(w, Math.round((g.right - offX) / scale));
+  const y1 = Math.min(h, Math.round((g.bottom - offY) / scale));
+  if (x1 - x0 < 16 || y1 - y0 < 16) return null;
+  const down = Math.min(1, MAX_SIDE / Math.max(x1 - x0, y1 - y0));
+  frameCanvas.width = Math.round((x1 - x0) * down);
+  frameCanvas.height = Math.round((y1 - y0) * down);
+  frameCtx.drawImage(video, x0, y0, x1 - x0, y1 - y0, 0, 0, frameCanvas.width, frameCanvas.height);
   return frameCanvas;
 }
 
@@ -204,7 +203,7 @@ export function startScanLoop(video, guide, detector, onFrame) {
   async function tick() {
     if (!running) return;
     let values = [];
-    const frame = video.readyState >= 2 && grabBand(video, guide);
+    const frame = video.readyState >= 2 && grabGuideArea(video, guide);
     if (frame) {
       try {
         values = await detector.detect(frame);

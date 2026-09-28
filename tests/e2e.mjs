@@ -29,10 +29,11 @@ function itfModules(digits) {
   seq.push(W, 1, 1); // stop: wide bar, space, bar
   return seq;
 }
-// The app decodes only a band around the guide box, so fake tags are drawn where
-// the guide sits: GUIDE_Y is its centre in the 1280x720 fake frame (set below).
+// The app decodes only what lies inside the guide box, so fake tags are drawn
+// small enough to fit in it, where the guide sits: GUIDE_Y is its centre in the
+// 1280x720 fake frame (set below).
 let GUIDE_Y = 360;
-function barcodeSvg(digits, { rotate = 0, module = 3, blur = 0, y = GUIDE_Y } = {}) {
+function barcodeSvg(digits, { rotate = 0, module = 2, blur = 0, cx = 640, y = GUIDE_Y } = {}) {
   const seq = itfModules(digits);
   let x = 0;
   let rects = "";
@@ -45,7 +46,7 @@ function barcodeSvg(digits, { rotate = 0, module = 3, blur = 0, y = GUIDE_Y } = 
   <svg width="1280" height="720" xmlns="http://www.w3.org/2000/svg">
     <defs><filter id="b"><feGaussianBlur stdDeviation="${blur}"/></filter></defs>
     <rect width="1280" height="720" fill="#c8c2b8"/>
-    <g transform="translate(640 ${y}) rotate(${rotate}) translate(${-bw / 2 - 40} -110)">
+    <g transform="translate(${cx} ${y}) rotate(${rotate}) translate(${-bw / 2 - 40} -110)">
       <rect width="${bw + 80}" height="220" fill="#fff"/>
       <g transform="translate(40 20)" filter="url(#b)">${rects}</g>
       <text x="${(bw + 80) / 2}" y="200" font-size="28" text-anchor="middle" font-family="monospace">${digits}</text>
@@ -168,8 +169,9 @@ try {
     none: await makeVideo(gen, "none", barcodeSvg("0994777888")),
     vertical: await makeVideo(gen, "vertical", barcodeSvg("0126123456", { rotate: 90, module: 2 })),
     below: await makeVideo(gen, "below", barcodeSvg("0126123456", { y: 610 })),
+    side: await makeVideo(gen, "side", barcodeSvg("0126123456", { cx: 1050 })),
     tilted: await makeVideo(gen, "tilted", barcodeSvg("0126123456", { rotate: 8, module: 2, blur: 0.6 })),
-    small: await makeVideo(gen, "small", barcodeSvg("0126123456", { module: 2 })),
+    small: await makeVideo(gen, "small", barcodeSvg("0126123456", { module: 1.5 })),
   };
   await gen.close();
 
@@ -181,19 +183,21 @@ try {
   await scanScenario(videos.tilted, WL, "full", "barcode-miring-buram");
   await scanScenario(videos.small, WL, "full", "barcode-kecil");
 
-  // A tag far below the guide box lies outside the decoded band: never read.
-  {
-    const browser = await launch(videos.below);
+  // A tag below the guide box, or beside it (off screen but in the camera frame),
+  // lies outside the decoded area: never read.
+  for (const [video, where] of [[videos.below, "di bawah"], [videos.side, "di samping"]]) {
+    const browser = await launch(video);
     try {
       const { page, errors } = await openApp(browser, WL);
       await new Promise((r) => setTimeout(r, 3000));
-      assert.equal(await page.$$eval("#scan-history li", (li) => li.length), 0, "read outside the guide band");
+      assert.equal(await page.$$eval("#scan-history li", (li) => li.length), 0, `read ${where} the guide box`);
       assert.deepEqual(errors.filter((e) => !e.includes("favicon")), [], "page errors");
-      console.log("✔ tag di luar kotak pemandu tidak dibaca");
+      console.log(`✔ tag ${where} kotak pemandu tidak dibaca`);
     } finally {
       await browser.close();
     }
   }
+
   // Android path: a stand-in BarcodeDetector (Windows Chrome has none) that
   // replays a scripted sequence of raw values, one per frame.
   // fastIdle: the 30-second idle pause fires after 8 s instead.
