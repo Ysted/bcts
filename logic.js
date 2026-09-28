@@ -77,6 +77,13 @@ export function matchTag(scanned, watchlist) {
   return { result: "none", full: null, near };
 }
 
+// Mean brightness (0-255) of RGBA pixel data, for the automatic torch.
+export function meanLuma(rgba) {
+  let sum = 0;
+  for (let i = 0; i < rgba.length; i += 4) sum += 0.299 * rgba[i] + 0.587 * rgba[i + 1] + 0.114 * rgba[i + 2];
+  return rgba.length ? sum / (rgba.length / 4) : 0;
+}
+
 // Accept only what a baggage tag can carry: exactly 10 digits, nothing else.
 // ITF has no checksum, so anything looser widens the door for misreads.
 export function isValidScan(raw) {

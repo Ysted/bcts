@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   parseBulkInput, formatTagNumber, summarizeAddResult, matchTag, isValidScan,
-  createReadConfirmer, createCooldown, diffDigits, formatLogText,
+  createReadConfirmer, createCooldown, diffDigits, formatLogText, meanLuma,
 } from "./logic.js";
 
 const list = (...numbers) => numbers.map((number) => ({ number, found: false }));
@@ -90,6 +90,19 @@ test("konfirmasi: dua barcode berbeda dalam satu frame tidak saling merusak", ()
   const confirm = createReadConfirmer();
   confirm(["0126123456", "0657000001"], 0);
   assert.deepEqual(confirm(["0126123456", "0657000001"], 50).map((c) => c.value).sort(), ["0126123456", "0657000001"]);
+});
+
+// Pembaca (zxing-cpp) bisa melaporkan satu barcode dua kali, jadi nilai kembar
+// dalam satu frame tidak boleh dihitung sebagai dua kali baca.
+test("konfirmasi: nilai kembar dalam satu frame tetap butuh frame kedua", () => {
+  const confirm = createReadConfirmer();
+  assert.deepEqual(confirm(["0126123456", "0126123456"], 0), []);
+  assert.deepEqual(confirm(["0126123456"], 50), [{ value: "0126123456", ms: 50 }]);
+});
+
+test("kecerahan rata-rata untuk senter otomatis", () => {
+  assert.equal(meanLuma(new Uint8ClampedArray([0, 0, 0, 255, 0, 0, 0, 255])), 0);
+  assert.equal(Math.round(meanLuma(new Uint8ClampedArray([255, 255, 255, 255, 0, 0, 0, 255]))), 128);
 });
 
 test("cooldown 3 detik dan suppress", () => {

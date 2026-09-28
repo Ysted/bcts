@@ -1,11 +1,11 @@
 import {
   parseBulkInput, summarizeAddResult, formatTagNumber, matchTag, isValidScan,
-  createReadConfirmer, createCooldown, formatLogText, formatLogTime, RESULT_LABEL,
+  createReadConfirmer, createCooldown, formatLogText, formatLogTime, RESULT_LABEL, meanLuma,
 } from "./logic.js";
 import { createDetector, openCamera, startScanLoop, cameraErrorMessage } from "./scanner.js";
 import { alarmFull, readPulse, stopVibration } from "./alarm.js";
 
-const APP_VERSION = "v9"; // keep in step with CACHE in sw.js
+const APP_VERSION = "v11"; // keep in step with CACHE in sw.js
 const WATCHLIST_KEY = "bcts.watchlist";
 const LOG_KEY = "bcts.log";
 const COUNTED_KEY = "bcts.counted"; // unique tags scanned since "Mulai hitungan baru"
@@ -105,19 +105,14 @@ function renderWatchlist() {
   listEl.classList.toggle("selecting", selecting);
   $("list-count").textContent = selecting
     ? `${selected.size} dipilih`
-    : `${watchlist.length} nomor · ${foundCount} sudah ketemu`;
+    : `${foundCount}/${watchlist.length} atensi ketemu`;
   $("select-cancel").hidden = !selecting;
   updateSelectButton();
   renderCount();
 }
 
 function renderCount() {
-  const foundCount = watchlist.filter((e) => e.found).length;
-  const scanCount = $("scan-count");
-  scanCount.replaceChildren(el("strong", "num", String(counted.size)), " discan");
-  scanCount.append(watchlist.length
-    ? ` · ${watchlist.length - foundCount} dicari · ${foundCount} ketemu`
-    : " · daftar kosong");
+  $("scan-count").replaceChildren(el("strong", "num", String(counted.size)), " discan");
 }
 
 function countTag(number) {
@@ -546,12 +541,55 @@ function releaseScreen() {
 function resumeLoop() {
   if (!camera || !detector || stopLoop) return;
   confirmReads = createReadConfirmer(); // never carry a half-confirmed read across a pause
-  stopLoop = startScanLoop(video, detector, onFrame);
+  stopLoop = startScanLoop(video, document.querySelector(".scan-guide"), detector, onFrame);
+  armIdle();
+  lightTimer = setInterval(checkLight, 1000);
 }
 
 function pauseLoop() {
   stopLoop?.();
   stopLoop = null;
+  clearTimeout(idleTimer);
+  clearInterval(lightTimer);
+}
+
+// A dark picture for 2 s turns the torch on by itself, like a scanner's own lamp.
+// Once the officer touches the torch button it is theirs until the camera reopens.
+const DARK_LUMA = 60; // mean brightness 0-255
+const lightProbe = document.createElement("canvas");
+lightProbe.width = lightProbe.height = 16;
+const lightCtx = lightProbe.getContext("2d", { willReadFrequently: true });
+let lightTimer = null;
+let torchManual = false;
+let darkChecks = 0;
+
+function checkLight() {
+  if (!camera?.torchSupported || torchManual || video.readyState < 2) return;
+  if (torchButton.getAttribute("aria-pressed") === "true") return;
+  lightCtx.drawImage(video, 0, 0, 16, 16);
+  darkChecks = meanLuma(lightCtx.getImageData(0, 0, 16, 16).data) < DARK_LUMA ? darkChecks + 1 : 0;
+  if (darkChecks >= 2) setTorch(true);
+}
+
+// Half a minute with no barcode in view: camera off and the screen may dim, the two
+// biggest heat and battery costs. One tap brings it back.
+const IDLE_SLEEP_MS = 30_000;
+let idleTimer = null;
+
+function armIdle() {
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(sleepScan, IDLE_SLEEP_MS);
+}
+
+function sleepScan() {
+  stopScan();
+  setHint("Kamera dijeda: 30 detik tanpa tag terbaca.");
+  showRetry("Lanjut scan");
+}
+
+function showRetry(label) {
+  $("scan-retry").textContent = label;
+  $("scan-retry").hidden = false;
 }
 
 const scanHint = $("scan-hint");
@@ -622,7 +660,7 @@ async function startScan() {
     setHint(err?.kind
       ? cameraErrorMessage(err)
       : `Pembaca barcode gagal dimuat (${err?.message || err}). Buka aplikasi sekali saat ada sinyal, lalu coba lagi.`);
-    $("scan-retry").hidden = false;
+    showRetry("Coba lagi");
     return;
   }
   starting = false;
@@ -633,6 +671,8 @@ async function startScan() {
   camera = opened;
   torchButton.hidden = !camera.torchSupported;
   torchButton.setAttribute("aria-pressed", "false");
+  torchManual = false;
+  darkChecks = 0;
   lastReported = null;
   setHint(scanHistory.children.length ? "" : watchlist.length ? "Arahkan kamera ke barcode tag" : "Daftar kosong: tidak ada yang dicari");
   keepScreenOn();
@@ -650,18 +690,23 @@ function stopScan() {
   torchButton.hidden = true;
 }
 
-torchButton.addEventListener("click", async () => {
-  const on = torchButton.getAttribute("aria-pressed") !== "true";
+async function setTorch(on) {
   try {
     await camera?.setTorch(on);
     torchButton.setAttribute("aria-pressed", String(on));
   } catch {
     torchButton.hidden = true;
   }
+}
+
+torchButton.addEventListener("click", () => {
+  torchManual = true;
+  setTorch(torchButton.getAttribute("aria-pressed") !== "true");
 });
 
 function onFrame(values, now) {
   if (!resultEl.hidden) return;
+  if (values.length) armIdle(); // something is in view: the officer is still scanning
   // Every decoded value (valid or not) takes part in confirmation, so a misread
   // between two good reads breaks the streak. Only then filter to 10-digit tags.
   const confirmed = confirmReads(values.map((v) => String(v).trim()), now).filter((c) => isValidScan(c.value));

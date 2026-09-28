@@ -29,7 +29,10 @@ function itfModules(digits) {
   seq.push(W, 1, 1); // stop: wide bar, space, bar
   return seq;
 }
-function barcodeSvg(digits, { rotate = 0, module = 3, blur = 0 } = {}) {
+// The app decodes only a band around the guide box, so fake tags are drawn where
+// the guide sits: GUIDE_Y is its centre in the 1280x720 fake frame (set below).
+let GUIDE_Y = 360;
+function barcodeSvg(digits, { rotate = 0, module = 3, blur = 0, y = GUIDE_Y } = {}) {
   const seq = itfModules(digits);
   let x = 0;
   let rects = "";
@@ -42,7 +45,7 @@ function barcodeSvg(digits, { rotate = 0, module = 3, blur = 0 } = {}) {
   <svg width="1280" height="720" xmlns="http://www.w3.org/2000/svg">
     <defs><filter id="b"><feGaussianBlur stdDeviation="${blur}"/></filter></defs>
     <rect width="1280" height="720" fill="#c8c2b8"/>
-    <g transform="translate(640 360) rotate(${rotate}) translate(${-bw / 2 - 40} -110)">
+    <g transform="translate(640 ${y}) rotate(${rotate}) translate(${-bw / 2 - 40} -110)">
       <rect width="${bw + 80}" height="220" fill="#fff"/>
       <g transform="translate(40 20)" filter="url(#b)">${rects}</g>
       <text x="${(bw + 80) / 2}" y="200" font-size="28" text-anchor="middle" font-family="monospace">${digits}</text>
@@ -145,11 +148,26 @@ async function scanScenario(videoFile, watchlistText, expect, label) {
 // --- scenarios ------------------------------------------------------------------
 try {
   const gen = await launch();
+  {
+    const page = await gen.newPage();
+    await page.setViewport({ width: 400, height: 860, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+    await page.goto(URL_BASE, { waitUntil: "networkidle0" });
+    await page.click('nav button[data-nav="scan"]');
+    await new Promise((r) => setTimeout(r, 600));
+    GUIDE_Y = await page.evaluate(() => {
+      const v = document.getElementById("video").getBoundingClientRect();
+      const g = document.querySelector(".scan-guide").getBoundingClientRect();
+      const scale = Math.max(v.width / 1280, v.height / 720); // object-fit: cover
+      return Math.round((g.top + g.height / 2 - v.top - (v.height - 720 * scale) / 2) / scale);
+    });
+    await page.close();
+  }
   const videos = {
     full: await makeVideo(gen, "full", barcodeSvg("0126123456")),
     near: await makeVideo(gen, "near", barcodeSvg("0126123499")),
     none: await makeVideo(gen, "none", barcodeSvg("0994777888")),
-    vertical: await makeVideo(gen, "vertical", barcodeSvg("0126123456", { rotate: 90 })),
+    vertical: await makeVideo(gen, "vertical", barcodeSvg("0126123456", { rotate: 90, module: 2 })),
+    below: await makeVideo(gen, "below", barcodeSvg("0126123456", { y: 610 })),
     tilted: await makeVideo(gen, "tilted", barcodeSvg("0126123456", { rotate: 8, module: 2, blur: 0.6 })),
     small: await makeVideo(gen, "small", barcodeSvg("0126123456", { module: 2 })),
   };
@@ -163,14 +181,33 @@ try {
   await scanScenario(videos.tilted, WL, "full", "barcode-miring-buram");
   await scanScenario(videos.small, WL, "full", "barcode-kecil");
 
+  // A tag far below the guide box lies outside the decoded band: never read.
+  {
+    const browser = await launch(videos.below);
+    try {
+      const { page, errors } = await openApp(browser, WL);
+      await new Promise((r) => setTimeout(r, 3000));
+      assert.equal(await page.$$eval("#scan-history li", (li) => li.length), 0, "read outside the guide band");
+      assert.deepEqual(errors.filter((e) => !e.includes("favicon")), [], "page errors");
+      console.log("✔ tag di luar kotak pemandu tidak dibaca");
+    } finally {
+      await browser.close();
+    }
+  }
   // Android path: a stand-in BarcodeDetector (Windows Chrome has none) that
   // replays a scripted sequence of raw values, one per frame.
-  async function nativeScenario(sequence, label, check) {
+  // fastIdle: the 30-second idle pause fires after 8 s instead.
+  async function nativeScenario(sequence, label, check, { fastIdle = false } = {}) {
     const browser = await launch(videos.none);
     try {
       const page = await browser.newPage();
-      await page.evaluateOnNewDocument((seq) => {
+      await page.evaluateOnNewDocument((seq, fastIdle) => {
         let i = 0;
+        window.__detects = 0;
+        if (fastIdle) {
+          const realSetTimeout = window.setTimeout;
+          window.setTimeout = (fn, ms, ...rest) => realSetTimeout(fn, ms === 30_000 ? 8000 : ms, ...rest);
+        }
         window.__audioUsed = false; // the app must stay silent (iPhone shows a music player otherwise)
         for (const name of ["AudioContext", "webkitAudioContext"]) {
           window[name] = class { constructor() { window.__audioUsed = true; } };
@@ -178,12 +215,13 @@ try {
         window.BarcodeDetector = class {
           static async getSupportedFormats() { return ["itf", "code_128", "qr_code", "data_matrix"]; }
           async detect() {
+            window.__detects++;
             await new Promise((r) => setTimeout(r, 30));
             const v = i < seq.length ? seq[i++] : null; // then nothing in view
             return v === null ? [] : [].concat(v).map((rawValue) => ({ rawValue }));
           }
         };
-      }, sequence);
+      }, sequence, fastIdle);
       await page.setViewport({ width: 400, height: 860, isMobile: true, hasTouch: true });
       await page.goto(URL_BASE, { waitUntil: "networkidle0" });
       await page.evaluate(() => localStorage.clear());
@@ -238,11 +276,12 @@ try {
   // A different bag in between: both logged, the first one again after it
   // (once the 3 s repeat guard for back-and-forth reads has passed).
   await nativeScenario(
-    [...Array(10).fill("0994777888"), ...Array(40).fill(null), ...Array(10).fill("0994777888"),
-      ...Array(10).fill("0990111222"), ...Array(120).fill(null), ...Array(10).fill("0994777888")],
+    // Empty frames are decoded ~10x/s (idle throttle): 10 ≈ 1 s lost, 35 ≈ 4 s > the 3 s guard.
+    [...Array(10).fill("0994777888"), ...Array(10).fill(null), ...Array(10).fill("0994777888"),
+      ...Array(10).fill("0990111222"), ...Array(35).fill(null), ...Array(10).fill("0994777888")],
     "android: tag sama tidak tercatat dua kali",
     async (page) => {
-      await new Promise((r) => setTimeout(r, 6000));
+      await page.waitForFunction(() => JSON.parse(localStorage.getItem("bcts.log") || "[]").length === 3, { timeout: 15000 });
       const log = await page.evaluate(() => JSON.parse(localStorage.getItem("bcts.log")));
       assert.deepEqual(log.map((e) => e.number), ["0994777888", "0990111222", "0994777888"]);
       const stack = await page.$$eval("#scan-history li", (li) => li.map((x) => `${x.className}|${x.querySelector(".scan-number").textContent}`));
@@ -251,6 +290,22 @@ try {
       assert.equal(await page.$eval("#scan-count strong", (e) => e.textContent), "2", "unique count");
     },
   );
+  // Nothing in view: few decodes (the phone stays cool), then the camera sleeps.
+  await nativeScenario([], "android: tanpa tag → baca ~10x/detik, lalu kamera dijeda", async (page) => {
+    const before = await page.evaluate(() => window.__detects);
+    await new Promise((r) => setTimeout(r, 2000));
+    const perSec = (await page.evaluate(() => window.__detects) - before) / 2;
+    assert.ok(perSec >= 4 && perSec <= 11, `decodes per second while idle: ${perSec}`);
+    await page.waitForFunction(() => !document.getElementById("scan-retry").hidden, { timeout: 10000 });
+    assert.equal(await page.$eval("#scan-retry", (b) => b.textContent), "Lanjut scan");
+    assert.equal(await page.$eval("#video", (v) => v.srcObject), null, "camera off while asleep");
+    const asleep = await page.evaluate(() => window.__detects);
+    await new Promise((r) => setTimeout(r, 1000));
+    assert.equal(await page.evaluate(() => window.__detects), asleep, "no decoding while asleep");
+    await page.click("#scan-retry");
+    await page.waitForFunction(() => document.getElementById("video").srcObject, { timeout: 10000 });
+    assert.equal(await isShown(page, "#scan-retry"), false);
+  }, { fastIdle: true });
   // Two bags in one frame: both confirmed, the listed one alarms.
   await nativeScenario(
     Array(40).fill(["0994777888", "0126123456"]),
@@ -295,7 +350,7 @@ try {
     await page.click("#result-found");
     const wl = await page.evaluate(() => JSON.parse(localStorage.getItem("bcts.watchlist")));
     assert.equal(wl.find((e) => e.number === "0126123456").found, true, "marked found from result");
-    assert.ok((await page.$eval("#scan-count", (e) => e.textContent)).includes("1 ketemu"), "counter");
+    assert.equal(await page.$eval("#list-count", (e) => e.textContent), "1/2 atensi ketemu", "counter");
     assert.equal(await page.$eval("#scan-count strong", (e) => e.textContent), "1", "scanned total");
 
     // Service worker ready → offline reload must still work, including ZXing.
@@ -304,7 +359,7 @@ try {
     await page.setOfflineMode(true);
     await page.reload({ waitUntil: "load" });
     assert.equal(await page.title(), "BCTS", "offline reload");
-    const zxingOffline = await page.evaluate(async () => (await fetch("vendor/zxing-0.23.0.min.js")).ok);
+    const zxingOffline = await page.evaluate(async () => (await fetch("vendor/zxing_reader-3.1.4.wasm")).ok);
     assert.ok(zxingOffline, "ZXing cached for offline");
     await page.click('nav button[data-nav="scan"]');
     await page.waitForFunction(() => document.querySelector("#scan-history .scan-ms")?.textContent.startsWith("terbaca"), { timeout: 15000 });

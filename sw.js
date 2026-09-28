@@ -1,6 +1,6 @@
 // Cache-first service worker: after one online visit the app runs fully offline.
 // Bump CACHE on every deploy so phones pick up the new files.
-const CACHE = "bcts-v9";
+const CACHE = "bcts-v11";
 const ASSETS = [
   "./",
   "./index.html",
@@ -10,7 +10,8 @@ const ASSETS = [
   "./scanner.js",
   "./alarm.js",
   "./manifest.json",
-  "./vendor/zxing-0.23.0.min.js",
+  "./vendor/zxing-wasm-3.1.4-reader.js",
+  "./vendor/zxing_reader-3.1.4.wasm",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
   "./icons/apple-touch-icon.png",

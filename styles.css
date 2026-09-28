@@ -198,9 +198,9 @@ nav button[aria-current="page"] { color: var(--text); font-weight: 700; backgrou
 }
 .scan-count strong { font-size: 1.2rem; }
 .scan-count button { min-height: 44px; border: none; background: none; color: #93c5fd; padding: 0 8px; font-size: 0.9rem; }
-/* ITF on a bag tag is long and short: a wide 3:1 window, clear of the thumb zone */
+/* square: a tag's barcode fits whether it runs across or upright; clear of the thumb zone */
 .scan-guide {
-  width: 84%; aspect-ratio: 3 / 1; margin-top: 14vh; flex: none;
+  width: min(80%, 46vh); aspect-ratio: 1; margin-top: 2vh; flex: none;
   border: 3px solid rgba(255, 255, 255, 0.9); border-radius: 14px;
   box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.35);
   pointer-events: none;
