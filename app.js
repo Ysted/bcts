@@ -391,7 +391,7 @@ async function copyText(text) {
 $("copy-log").addEventListener("click", async () => {
   const ok = await copyText(formatLogText(scanLog, counted.size));
   showFeedback($("log-feedback"), ok
-    ? `${scanLog.length} baris disalin. Tempel di WhatsApp.`
+    ? `${scanLog.length} baris disalin`
     : "Gagal menyalin. Tekan lama pada daftar lalu salin manual.", !ok);
 });
 
@@ -613,7 +613,7 @@ function showRead(number, ms, near) {
     index++;
   }
   const item = el("li");
-  item.append(digits, el("span", "scan-ms num", `${ms}ms`));
+  item.append(digits, el("span", "scan-ms num", ms > 99 ? "99+" : `${ms}ms`)); // two digits at most
 
   const before = new Map([...scanHistory.children].map((li) => [li, li.getBoundingClientRect().top]));
   scanHistory.prepend(item);

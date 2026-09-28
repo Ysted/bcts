@@ -108,7 +108,7 @@ async function scanScenario(videoFile, watchlistText, expect, label) {
   try {
     const t0 = Date.now();
     const { page, errors } = await openApp(browser, watchlistText);
-    await page.waitForFunction(() => /^\d+ms$/.test(document.querySelector("#scan-history .scan-ms")?.textContent), { timeout: 15000 });
+    await page.waitForFunction(() => /^(\d{1,2}ms|99\+)$/.test(document.querySelector("#scan-history .scan-ms")?.textContent), { timeout: 15000 });
     const ms = Date.now() - t0;
     const readMs = await page.$eval("#scan-history li:first-child .scan-ms", (e) => e.textContent);
     if (expect === "full") {
@@ -366,7 +366,7 @@ try {
     const zxingOffline = await page.evaluate(async () => (await fetch("vendor/zxing_reader-3.1.4.wasm")).ok);
     assert.ok(zxingOffline, "ZXing cached for offline");
     await page.click('nav button[data-nav="scan"]');
-    await page.waitForFunction(() => /^\d+ms$/.test(document.querySelector("#scan-history .scan-ms")?.textContent), { timeout: 15000 });
+    await page.waitForFunction(() => /^(\d{1,2}ms|99\+)$/.test(document.querySelector("#scan-history .scan-ms")?.textContent), { timeout: 15000 });
     await page.setOfflineMode(false);
 
     await page.waitForSelector("#result:not([hidden])"); // same tag, already found: still alarms
