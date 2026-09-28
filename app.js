@@ -5,7 +5,7 @@ import {
 import { createDetector, openCamera, startScanLoop, cameraErrorMessage } from "./scanner.js";
 import { alarmFull, readPulse, stopVibration } from "./alarm.js";
 
-const APP_VERSION = "v13"; // keep in step with CACHE in sw.js
+const APP_VERSION = "v14"; // keep in step with CACHE in sw.js
 const WATCHLIST_KEY = "bcts.watchlist";
 const LOG_KEY = "bcts.log";
 const COUNTED_KEY = "bcts.counted"; // unique tags scanned since "Mulai hitungan baru"
