@@ -5,7 +5,6 @@ import {
 import { createDetector, openCamera, startScanLoop, cameraErrorMessage } from "./scanner.js";
 import { alarmFull, readPulse, stopVibration } from "./alarm.js";
 
-const APP_VERSION = "v16"; // keep in step with CACHE in sw.js
 const WATCHLIST_KEY = "bcts.watchlist";
 const LOG_KEY = "bcts.log";
 const COUNTED_KEY = "bcts.counted"; // unique tags scanned since "Mulai hitungan baru"
@@ -358,7 +357,7 @@ function renderLog() {
   logList.replaceChildren(...rows);
   const hasRows = rows.length > 0;
   logList.hidden = !hasRows;
-  $("log-footer").hidden = !hasRows;
+  $("log-actions").hidden = !hasRows;
   $("log-empty").hidden = hasRows;
 }
 
@@ -614,7 +613,7 @@ function showRead(number, ms, near) {
     index++;
   }
   const item = el("li");
-  item.append(digits, el("p", "scan-ms num", `terbaca ${ms} ms`));
+  item.append(digits, el("span", "scan-ms num", `${ms}ms`));
 
   const before = new Map([...scanHistory.children].map((li) => [li, li.getBoundingClientRect().top]));
   scanHistory.prepend(item);
@@ -652,7 +651,7 @@ async function startScan() {
   let opened;
   try {
     detector ||= await createDetector({ forceZxing });
-    $("engine-info").textContent = `· pembaca barcode: ${detector.name}`;
+    document.body.dataset.engine = detector.name; // read by the e2e tests
     opened = await openCamera(video);
   } catch (err) {
     starting = false;
@@ -784,4 +783,3 @@ if ("serviceWorker" in navigator) {
 
 renderWatchlist();
 renderLog();
-$("app-version").textContent = `BCTS ${APP_VERSION}`;

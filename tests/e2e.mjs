@@ -108,7 +108,7 @@ async function scanScenario(videoFile, watchlistText, expect, label) {
   try {
     const t0 = Date.now();
     const { page, errors } = await openApp(browser, watchlistText);
-    await page.waitForFunction(() => document.querySelector("#scan-history .scan-ms")?.textContent.startsWith("terbaca"), { timeout: 15000 });
+    await page.waitForFunction(() => /^\d+ms$/.test(document.querySelector("#scan-history .scan-ms")?.textContent), { timeout: 15000 });
     const ms = Date.now() - t0;
     const readMs = await page.$eval("#scan-history li:first-child .scan-ms", (e) => e.textContent);
     if (expect === "full") {
@@ -122,7 +122,7 @@ async function scanScenario(videoFile, watchlistText, expect, label) {
       else assert.equal(colours, "", `${label}: no colours`);
     }
     await page.screenshot({ path: `${OUT}${label}.png` });
-    const engine = await page.$eval("#engine-info", (e) => e.textContent);
+    const engine = await page.$eval("body", (e) => e.dataset.engine);
     assert.ok(engine.includes("ZXing"), `${label}: engine ${engine}`);
     const log = await page.evaluate(() => JSON.parse(localStorage.getItem("bcts.log")));
     assert.equal(log.at(-1).result, expect === "full" ? "full" : "none", `${label}: log result`);
@@ -235,7 +235,7 @@ try {
       await page.click("#add-form button[type=submit]");
       await page.click('nav button[data-nav="scan"]');
       await new Promise((r) => setTimeout(r, 2500));
-      assert.ok((await page.$eval("#engine-info", (e) => e.textContent)).includes("bawaan Chrome"), `${label}: engine`);
+      assert.ok((await page.$eval("body", (e) => e.dataset.engine)).includes("bawaan Chrome"), `${label}: engine`);
       await check(page);
       console.log(`✔ ${label}`);
     } finally {
@@ -366,7 +366,7 @@ try {
     const zxingOffline = await page.evaluate(async () => (await fetch("vendor/zxing_reader-3.1.4.wasm")).ok);
     assert.ok(zxingOffline, "ZXing cached for offline");
     await page.click('nav button[data-nav="scan"]');
-    await page.waitForFunction(() => document.querySelector("#scan-history .scan-ms")?.textContent.startsWith("terbaca"), { timeout: 15000 });
+    await page.waitForFunction(() => /^\d+ms$/.test(document.querySelector("#scan-history .scan-ms")?.textContent), { timeout: 15000 });
     await page.setOfflineMode(false);
 
     await page.waitForSelector("#result:not([hidden])"); // same tag, already found: still alarms

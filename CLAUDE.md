@@ -28,7 +28,7 @@ Menggantikan bagian PRD yang bertentangan:
 - Hanya cocok penuh yang memberi alarm, dengan judul "Ketemu!"; di log berlabel "Match". Tag lain di log tanpa label, hanya nomor dan jam.
 - Nomor yang mirip (≥8 dari 10 angka sama di posisi yang sama) tidak memberi alarm; angkanya diwarnai hijau (sama) dan merah (beda) di bawah kotak scan.
 - Tidak ada input manual / tombol Ketik nomor. Atensi hanya diisi di halaman Daftar.
-- Membuka tab Scan langsung menyalakan kamera. Setiap baca berbunyi beep, layar berkedip, dan waktu baca ("terbaca N ms") ditampilkan.
+- Membuka tab Scan langsung menyalakan kamera. Setiap baca berbunyi beep, layar berkedip, dan waktu baca ditampilkan (v17: label kecil "NNms" di samping tiap nomor).
 - Tag yang sama tidak dicatat ulang sampai ada tag lain yang terbaca.
 - Daftar (v5): halaman hanya berisi daftar + tombol + bulat di tengah bawah; kolom nomor (Paste di dalamnya) dan Tambah ke daftar ada di modal. Hanya daftar yang scroll. Geser kiri untuk hapus satu; tahan untuk memilih, lalu Pilih semua / Hapus (N) di kanan atas dengan konfirmasi. Tandai ketemu hanya dari layar Ketemu!.
 - Scan (v7): halaman Scan selalu kamera, tanpa tombol Mulai/Berhenti; kamera mati saat pindah halaman. Geser kiri/kanan pindah halaman, kecuali geser di atas baris daftar (itu untuk Hapus). Semua konfirmasi hapus/reset lewat modal, bukan tekan-dua-kali.

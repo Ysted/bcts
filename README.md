@@ -21,5 +21,5 @@ node tests/e2e.mjs     # tes Chrome + kamera palsu (butuh python, ffmpeg, Chrome
 node tools/make-icons.mjs
 ```
 
-Setiap rilis: naikkan `CACHE` di `sw.js` dan `APP_VERSION` di `app.js` bersamaan, supaya HP mengambil versi baru.
+Setiap rilis: naikkan `CACHE` di `sw.js`, supaya HP mengambil versi baru.
 `?engine=zxing` di alamat memaksa pembaca ZXing (untuk membandingkan dengan pembaca bawaan Chrome).

@@ -100,6 +100,13 @@ button.primary { background: var(--primary-bg); color: var(--primary-fg); border
 #view-daftar .watchlist { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-bottom: 88px; }
 #view-daftar .feedback:empty { display: none; }
 
+/* Log: actions stay at the top, only the log scrolls */
+#view-log { display: flex; flex-direction: column; overflow: hidden; }
+#view-log .log { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin-top: 8px; }
+#view-log .list-head { margin-top: 0; }
+#view-log .feedback:empty { display: none; }
+#clear-log { color: var(--danger); }
+
 /* round + floating centred just above the bottom nav (moves with its page) */
 .fab svg { display: block; }
 .fab {
@@ -171,7 +178,6 @@ button.primary { background: var(--primary-bg); color: var(--primary-fg); border
 .log li.full .log-result { color: var(--found); font-weight: 700; }
 
 .empty { color: var(--muted); margin-top: 32px; text-align: center; }
-.list-footer { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 16px; color: var(--muted); }
 .stack { display: grid; gap: 12px; margin-top: 16px; }
 .small { font-size: 0.8rem; }
 
@@ -189,7 +195,7 @@ nav button[aria-current="page"] { color: var(--text); font-weight: 700; backgrou
 .scanner { position: absolute; inset: 0; background: #000; color: #fff; overflow: hidden; }
 .scanner video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .scan-layer {
-  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; gap: 16px;
+  position: absolute; inset: 0; container-type: size; display: flex; flex-direction: column; align-items: center; gap: 16px;
   padding: calc(16px + env(safe-area-inset-top, 0px)) 16px 16px;
 }
 .scan-count {
@@ -198,30 +204,32 @@ nav button[aria-current="page"] { color: var(--text); font-weight: 700; backgrou
 }
 .scan-count strong { font-size: 1.2rem; }
 .scan-count button { min-height: 44px; border: none; background: none; color: #93c5fd; padding: 0 8px; font-size: 0.9rem; }
-/* square: a tag's barcode fits whether it runs across or upright; clear of the thumb zone */
+/* square: a tag's barcode fits whether it runs across or upright; clear of the thumb zone.
+   On a short screen (iPhone with browser bars) it shrinks so the three reads below still fit:
+   230px = counter bar, gaps and the read stack. */
 .scan-guide {
-  width: min(80%, 46vh); aspect-ratio: 1; margin-top: 2vh; flex: none;
+  width: min(80cqw, 46vh, 100cqh - 2vh - 230px); aspect-ratio: 1; margin-top: 2vh; flex: none;
   border: 3px solid rgba(255, 255, 255, 0.9); border-radius: 14px;
   box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.35);
   pointer-events: none;
 }
 /* on a short screen it gives up the older reads (clipped at the bottom) so the torch stays above the nav */
 .scan-result {
-  position: relative; z-index: 2; width: 84%; text-align: center; padding: 10px 12px; border-radius: 12px;
+  position: relative; z-index: 2; width: 90%; text-align: center; padding: 10px 12px; border-radius: 12px;
   background: rgba(0, 0, 0, 0.6); flex: 0 1 auto; min-height: 0; overflow: hidden;
 }
 .scan-hint { margin: 0; font-size: 1.05rem; }
 .scan-hint:empty { display: none; }
 /* newest read on top, big; the previous two shrink and fade below it */
 .scan-history { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
-.scan-history li { transform-origin: center top; transition: opacity 0.22s ease-out; }
-.scan-number { margin: 0; font-size: clamp(1.6rem, 8.5vw, 2.4rem); font-weight: 700; line-height: 1.2; transition: font-size 0.22s ease-out; }
+/* each read: the number with its read time in a small pill beside it */
+.scan-history li { display: flex; justify-content: center; align-items: center; gap: 8px; transform-origin: center top; transition: opacity 0.22s ease-out; }
+.scan-number { margin: 0; white-space: nowrap; font-size: clamp(1.4rem, 7.5vw, 2.4rem); font-weight: 700; line-height: 1.2; transition: font-size 0.22s ease-out; }
 .scan-history li.old { opacity: 0.55; }
 .scan-history li.old .scan-number { font-size: 1.15rem; font-weight: 600; }
-.scan-history li.old .scan-ms { display: none; }
 .scan-number .same { color: #4ade80; }
 .scan-number .diff { color: #f87171; }
-.scan-ms { margin: 2px 0 0; font-size: 0.8rem; opacity: 0.75; }
+.scan-ms { flex: none; padding: 1px 6px; border-radius: 6px; background: rgba(255, 255, 255, 0.18); font-size: 0.75rem; font-weight: 600; }
 .scan-controls { margin-top: auto; align-self: stretch; display: flex; justify-content: center; gap: 12px; position: relative; }
 .scan-controls button { background: rgba(255, 255, 255, 0.95); color: #111827; border: none; font-weight: 600; }
 .scan-controls #scan-retry { flex: 1; }
@@ -235,8 +243,8 @@ nav button[aria-current="page"] { color: var(--text); font-weight: 700; backgrou
 .scan-count button.round[aria-pressed="true"] { background: #fde68a; color: #111827; }
 /* over the camera and the dimming around the guide, under the counter and the read number */
 .scan-flash { position: absolute; inset: 0; z-index: 1; background: #fff; opacity: 0; pointer-events: none; }
-.scan-flash.on { animation: flash 1000ms ease-out; }
-@keyframes flash { 0%, 80% { opacity: 0.85; } 100% { opacity: 0; } }
+.scan-flash.on { animation: flash 800ms ease-out; }
+@keyframes flash { 0%, 62.5% { opacity: 0.85; } 100% { opacity: 0; } }
 
 /* full-screen result */
 .result {
